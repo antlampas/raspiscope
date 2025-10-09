@@ -41,7 +41,7 @@ class TestAnalysis(unittest.TestCase):
         """
         Tests that the Analysis module is initialized correctly.
         """
-        self.assertEqual(self.analysisModule.name, "Analysis")
+        self.assertEqual(self.analysisModule.module_name, "Analysis")
         self.assertEqual(self.analysisModule.referenceSpectraPath, 'dummy_path.csv')
         self.assertEqual(self.analysisModule.toleranceNm, 10)
         self.assertIsNone(self.analysisModule.referenceSpectra)
@@ -150,10 +150,17 @@ class TestAnalysis(unittest.TestCase):
         """
         Tests that sendAnalysisResults sends the correct message.
         """
-        results = {"key": "value"}
+        results = {
+            "identified_substances": ["H2O"],
+            "spectrogram_data": [0.1, 0.2, 0.3],
+            "key": "value"
+        }
         self.analysisModule.sendAnalysisResults(results)
 
         sentMessage = self.mockCommInstance.outgoingQueue.put.call_args[0][0]
         self.assertEqual(sentMessage[0], 'All')
         self.assertEqual(sentMessage[1]['Message']['type'], 'AnalysisComplete')
-        self.assertEqual(sentMessage[1]['Message']['payload'], results)
+        payload = sentMessage[1]['Message']['payload']
+        self.assertEqual(payload["identified_substances"], results["identified_substances"])
+        self.assertEqual(payload["spectrogram_data"], results["spectrogram_data"])
+        self.assertEqual(payload["details"], results)

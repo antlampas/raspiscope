@@ -25,17 +25,20 @@ class CLI(Module):
             except EOFError:
                 self.stopEvent.set()
                 break
+            except KeyboardInterrupt:
+                self.stopEvent.set()
+                break
 
             if not command:
                 continue
 
-            if command in {"take picture","take"}:
+            if command in {"takePicture"}:
                 self.sendMessage("Camera","Take")
-            elif command in {"make analysis","analyze","analysis"}:
+            elif command in {"analyze","analysis"}:
                 self.sendMessage("Camera","Analyze")
-            elif command in {"calibrate camera","camera calibrate"}:
+            elif command in {"calibrateCamera"}:
                 self.sendMessage("Camera","Calibrate")
-            elif command in {"calibrate sensor","sensor calibrate"}:
+            elif command in {"calibrateSensor"}:
                 self.sendMessage("CuvetteSensor","Calibrate")
             elif command in {"quit","exit"}:
                 self.stopEvent.set()

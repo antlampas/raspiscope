@@ -43,8 +43,12 @@ class Camera(Module):
         self.sendMessage("EventManager", "Register")
         try:
             self.camera = Picamera2()
-            camConfig  = self.camera.create_still_configuration({"size": self.resolution,"gain" : self.gain,"exposure" : self.exposure})
+            camConfig  = self.camera.create_still_configuration({"size": self.resolution})
             self.camera.configure(camConfig)
+            self.camera.set_controls({
+                                        "AnalogueGain": self.gain,
+                                        "ExposureTime": self.exposure,
+                                    })
             self.camera.start()
             self.log("INFO",f"Camera started and configured with resolution {self.resolution}.")
         except Exception as e:

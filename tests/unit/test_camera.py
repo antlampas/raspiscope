@@ -52,7 +52,7 @@ class TestCamera(unittest.TestCase):
         """
         Tests that the Camera module is initialized with correct config values.
         """
-        self.assertEqual(self.cameraModule.name, "Camera")
+        self.assertEqual(self.cameraModule.module_name, "Camera")
         self.assertEqual(self.cameraModule.resolution, [1920, 1080])
         self.assertEqual(self.cameraModule.gain, 1.0)
         self.assertEqual(self.cameraModule.exposure, 10000)

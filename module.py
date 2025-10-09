@@ -25,8 +25,8 @@ class Module:
             networkConfig (dict): Dictionary with network parameters ('address','port',etc.).
             systemConfig (dict): Dictionary with system-wide parameters.
         """
-        self.name               = name
-        self.communicator       = Communicator(commType="client",name=self.name,config=networkConfig)
+        self._module_name       = name
+        self.communicator       = Communicator(commType="client",name=self._module_name,config=networkConfig)
         self.stopEvent          = Event()
         self.communicatorThread = None
         self.queueTimeout       = systemConfig.get("module_message_queue_timeout_s",0.1)
@@ -37,7 +37,7 @@ class Module:
         It orchestrates the module's lifecycle by calling onStart,
         mainLoop, and onStop methods, and manages its communication thread.
         """
-        self.log("INFO",f"Module '{self.name}' starting.")
+        self.log("INFO",f"Module '{self._module_name}' starting.")
         self.communicatorThread = Thread(target=self.communicator.run,args=(self.stopEvent,))
         self.communicatorThread.start()
 
@@ -47,7 +47,7 @@ class Module:
         
         if self.communicatorThread:
             self.communicatorThread.join()
-        self.log("INFO",f"Module '{self.name}' terminated.")
+        self.log("INFO",f"Module '{self._module_name}' terminated.")
 
     def mainLoop(self):
         """
@@ -59,7 +59,7 @@ class Module:
                 message = self.communicator.incomingQueue.get(block=True,timeout=self.queueTimeout)
 
                 if message.get("Message",{}).get("type") == "Stop":
-                    self.log("INFO",f"Module '{self.name}' received stop signal.")
+                    self.log("INFO",f"Module '{self._module_name}' received stop signal.")
                     self.stopEvent.set()
                     break
                 
@@ -76,7 +76,7 @@ class Module:
         This method is thread-safe.
         """
         message = {
-            "Sender"      : self.name,
+            "Sender"      : self._module_name,
             "Destination" : destination,
             "Message"     : {
                                 "type"    : msgType,
@@ -101,6 +101,13 @@ class Module:
             "message" : message
         }
         self.sendMessage("Logger","LogMessage",payload)
+
+    @property
+    def module_name(self):
+        """
+        Returns the configured name of this module.
+        """
+        return self._module_name
 
     # --- Methods to be overridden in child classes ---
 

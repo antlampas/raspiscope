@@ -35,7 +35,7 @@ class TestLogger(unittest.TestCase):
         """
         Tests logger initialization with a single destination string.
         """
-        self.assertEqual(self.logger.name, "Logger")
+        self.assertEqual(self.logger.module_name, "Logger")
         self.assertIsInstance(self.logger.communicator, MagicMock)
         self.assertEqual(self.logger.destinations, ["stdout"])
 

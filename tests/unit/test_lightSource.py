@@ -40,7 +40,7 @@ class TestLightSource(unittest.TestCase):
         """
         Tests that the LightSource module is initialized with correct config values.
         """
-        self.assertEqual(self.lightSource.name, "LightSource")
+        self.assertEqual(self.lightSource.module_name, "LightSource")
         self.assertEqual(self.lightSource.pin, 18)
         self.assertEqual(self.lightSource.brightness, 127) # 0.5 * 255
         self.assertEqual(self.lightSource.color, (255, 0, 0))

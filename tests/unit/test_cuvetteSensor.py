@@ -47,7 +47,7 @@ class TestCuvetteSensor(unittest.TestCase):
         """
         Tests that the CuvetteSensor is initialized with correct config values.
         """
-        self.assertEqual(self.sensorModule.name, "CuvetteSensor")
+        self.assertEqual(self.sensorModule.module_name, "CuvetteSensor")
         self.assertEqual(self.sensorModule.inputPin, 17)
         self.assertEqual(self.sensorModule.pollInterval, 0.05)
         self.assertEqual(self.sensorModule.numSamples, 5)

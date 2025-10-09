@@ -45,7 +45,7 @@ def main():
     emProcess = Process(target=event_manager.run)
     emProcess.start()
 
-    # 3. Start each enabled module in its own process
+    # Start each enabled module (except GUI) in its own process
     for name, module_class in modules_to_start.items():
         if name in config['modules'] and config['modules'][name].get('enabled', False):
             print(f"Starting module: {name}")
@@ -60,26 +60,54 @@ def main():
             
             running_processes.append({'name': name, 'process': process})
 
-    def shutdown():
+    # Run GUI in the main process if it's enabled
+    gui_instance = None
+    if 'gui' in config['modules'] and config['modules']['gui'].get('enabled', False):
+        print("Starting module: gui")
+        module_config = config['modules']['gui']
+        network_config = config['network']
+        system_config = config['system']
+        gui_instance = GUI(module_config, network_config, system_config)
+
+    def shutdown(signum=None, frame=None):
         print("Shutdown signal received. Terminating all processes...")
+        
+        # Stop the GUI instance if it exists
+        if gui_instance:
+            gui_instance.stop()
+
+        # Stop the EventManager
         event_manager.stop()
+        
+        # Terminate all child processes
         for p_info in running_processes:
             print(f"Terminating {p_info['name']}...")
-            p_info['process'].terminate()
-            p_info['process'].join()
-        # The EventManager thread will be stopped by its own signal handler
-        # We just need to wait for it to finish
-        emProcess.join()
+            if p_info['process'].is_alive():
+                p_info['process'].terminate()
+                p_info['process'].join(timeout=5) # Add timeout
+        
+        # Wait for the EventManager process to finish
+        if emProcess.is_alive():
+            emProcess.join(timeout=5)
+
         print("All processes terminated. Exiting.")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    # Keep the main thread alive to wait for signals
-    emProcess.join() # Wait for event manager to finish
-    # If the event manager thread finishes, it means a shutdown was requested
-    # so we call shutdown() to clean up the other processes
+    # Start the GUI, which will block the main thread
+    if gui_instance:
+        try:
+            gui_instance.run()
+        except KeyboardInterrupt:
+            shutdown()
+    else:
+        # If GUI is not running, wait for the EventManager to finish
+        if emProcess.is_alive():
+            emProcess.join()
+
+    # After the GUI closes or if it wasn't started, perform shutdown
     shutdown()
 
 if __name__ == "__main__":

@@ -206,5 +206,10 @@ class Analysis(Module):
         Args:
             results (dict): The dictionary of analysis results.
         """
-        self.sendMessage("All","AnalysisComplete",results)
+        payload = {
+            "identified_substances": results.get("identified_substances", []),
+            "spectrogram_data": results.get("spectrogram_data", []),
+            "details": results
+        }
+        self.sendMessage("All","AnalysisComplete",payload)
         self.log("INFO","Analysis complete and results sent.")
