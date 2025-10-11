@@ -21,7 +21,7 @@ class CLI(Module):
     def _promptLoop(self):
         while not self.stopEvent.is_set():
             try:
-                command = input("Prompt: ").strip().lower()
+                command = input("Prompt: ").strip()
             except EOFError:
                 self.stopEvent.set()
                 break
@@ -32,13 +32,13 @@ class CLI(Module):
             if not command:
                 continue
 
-            if command in {"takePicture"}:
+            if command == "takePicture":
                 self.sendMessage("Camera","Take")
-            elif command in {"analyze","analysis"}:
+            elif command == "analyze":
                 self.sendMessage("Camera","Analyze")
-            elif command in {"calibrateCamera"}:
+            elif command == "CalibrateCamera":
                 self.sendMessage("Camera","Calibrate")
-            elif command in {"calibrateSensor"}:
+            elif command == "CalibrateCuvette":
                 self.sendMessage("CuvetteSensor","Calibrate")
             elif command in {"quit","exit"}:
                 self.stopEvent.set()
