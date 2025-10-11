@@ -41,8 +41,42 @@
         font_size: "16sp"
         text: "Sostanze riconosciute: nessuna"
 
+<CliPane@BoxLayout>:
+    orientation: "vertical"
+    spacing: dp(8)
+    padding: dp(8)
+    canvas.before:
+        Color:
+            rgba: 0.08, 0.08, 0.1, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    ScrollView:
+        id: cli_scroll
+        size_hint_y: 1
+        do_scroll_x: False
+        bar_width: dp(6)
+        Label:
+            id: cli_history
+            text: ""
+            halign: "left"
+            valign: "top"
+            text_size: self.width, None
+            size_hint_y: None
+            height: self.texture_size[1]
+            font_size: "14sp"
+            color: 1, 1, 1, 1
+    TextInput:
+        id: cli_input
+        size_hint_y: None
+        height: dp(40)
+        multiline: False
+        write_tab: False
+        hint_text: "Comandi: takePicture, analyze, CalibrateCamera, CalibrateCuvette, lightOn, lightOff"
+        on_text_validate: app.root.submit_cli_command(self.text)
+
 <MainLayout@BoxLayout>:
-    orientation: "horizontal"
+    orientation: "vertical"
     spacing: dp(8)
     padding: dp(8)
     canvas.before:
@@ -52,10 +86,17 @@
             pos: self.pos
             size: self.size
 
-    CameraPane:
-        id: camera_pane
-        size_hint_x: 0.5
+    BoxLayout:
+        id: content_row
+        spacing: dp(8)
+        CameraPane:
+            id: camera_pane
+            size_hint_x: 0.5
 
-    SpectrogramPane:
-        id: spectrogram_pane
-        size_hint_x: 0.5
+        SpectrogramPane:
+            id: spectrogram_pane
+            size_hint_x: 0.5
+
+    CliPane:
+        id: cli_pane
+        size_hint_y: 0.32

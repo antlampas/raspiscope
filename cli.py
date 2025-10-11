@@ -40,6 +40,10 @@ class CLI(Module):
                 self.sendMessage("Camera","Calibrate")
             elif command == "CalibrateCuvette":
                 self.sendMessage("CuvetteSensor","Calibrate")
+            elif command == "lightOn":
+                self.sendMessage("LightSource","TurnOn")
+            elif command == "lightOff":
+                self.sendMessage("LightSource","TurnOff")
             elif command in {"quit","exit"}:
                 self.stopEvent.set()
             else:

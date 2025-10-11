@@ -79,7 +79,7 @@ class Camera(Module):
             self.log("INFO","Received 'Analyze' command. Starting analysis.")
             picture = self.takePicture()
             if picture:
-                self.sendMessage("Analyze","Analyze",picture)
+                self.sendMessage("Analysis","Analyze",picture)
         elif msgType == "Calibrate":
             self.log("INFO","Received 'Calibrate' command. Starting calibration.")
             self.calibrate()
