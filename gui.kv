@@ -1,131 +1,61 @@
-# Author: Antlampas
-# CC BY-SA 4.0
-# https://creativecommons.org/licenses/by-sa/4.0/
+# Minimal layout for Raspiscope running on a headless Raspberry Pi.
 
 #:import dp kivy.metrics.dp
-#:import rgba kivy.utils.get_color_from_hex
 
-<SectionTitle@Label>:
-    size_hint_y: None
-    height: self.texture_size[1] + dp(2)
-    text_size: self.size
-    halign: "left"
-    valign: "middle"
-    font_size: "18sp"
-    color: rgba("#E4ECF8")
-
-<BodyLabel@Label>:
-    text_size: self.width, None
-    halign: "left"
-    valign: "top"
-    font_size: "15sp"
-    color: rgba("#9FB3C8")
-    size_hint_y: None
-    height: self.texture_size[1]
-
-<SectionCard@BoxLayout>:
-    orientation: "vertical"
-    padding: dp(16)
-    spacing: dp(12)
-    size_hint: 1, 1
+<CameraPane@RelativeLayout>:
     canvas.before:
         Color:
-            rgba: rgba("#152030")
+            rgba: 0.0, 0.2, 0.6, 1
         Rectangle:
             pos: self.pos
             size: self.size
-
-<CameraPreview@SectionCard>:
-    image_texture: None
-    placeholder_text: "Nessuna immagine disponibile"
-    SectionTitle:
-        text: "Anteprima camera"
-    RelativeLayout:
+    Image:
+        id: camera_image
+        allow_stretch: True
+        keep_ratio: True
         size_hint: 1, 1
-        canvas.before:
-            Color:
-                rgba: rgba("#0E1724")
-            Rectangle:
-                pos: self.pos
-                size: self.size
-        Image:
-            id: preview_image
-            texture: root.image_texture
-            allow_stretch: True
-            keep_ratio: True
-            size_hint: 1, 1
-        Label:
-            text: root.placeholder_text
-            color: rgba("#A5B4C7")
-            font_size: "16sp"
-            text_size: self.size
-            halign: "center"
-            valign: "middle"
-            opacity: 0 if preview_image.texture else 1
+    Label:
+        text: "No Image"
+        color: 1, 1, 1, 1
+        font_size: "20sp"
+        text_size: self.size
+        halign: "center"
+        valign: "middle"
+        opacity: 1 if not camera_image.texture else 0
 
-<SpectrogramGraph>:
+<SpectrogramPane@BoxLayout>:
     orientation: "vertical"
-    padding: 0
-    spacing: 0
-
-<SpectrogramSection@SectionCard>:
-    spectrogram_data: []
-    SectionTitle:
-        text: "Spettrogramma"
+    spacing: dp(8)
+    padding: dp(8)
     SpectrogramGraph:
-        size_hint: 1, 1
-        spectrogram_data: root.spectrogram_data
-
-<StatusPanel@SectionCard>:
-    substances_text: ""
-    SectionTitle:
-        text: "Sostanze riconosciute"
-    BodyLabel:
-        text: root.substances_text
+        id: spectrogram_graph
+        size_hint_y: 1
+    Label:
+        id: substances_label
+        size_hint_y: None
+        height: self.texture_size[1] + dp(12)
+        text_size: self.width, None
         halign: "left"
         valign: "middle"
+        color: 1, 1, 1, 1
+        font_size: "16sp"
+        text: "Sostanze riconosciute: nessuna"
 
-<MainLayout>:
-    orientation: "vertical"
-    spacing: dp(20)
-    padding: dp(20)
+<MainLayout@BoxLayout>:
+    orientation: "horizontal"
+    spacing: dp(8)
+    padding: dp(8)
     canvas.before:
         Color:
-            rgba: rgba("#0B121C")
+            rgba: 0.05, 0.05, 0.08, 1
         Rectangle:
             pos: self.pos
             size: self.size
 
-    BoxLayout:
-        size_hint_y: None
-        height: dp(56)
-        padding: [0, 0, 0, dp(4)]
-        Label:
-            text: "Raspiscope"
-            font_size: "26sp"
-            color: rgba("#E4ECF8")
-            halign: "left"
-            valign: "middle"
-            text_size: self.size
-        Label:
-            text: "Monitoraggio spettrometrico"
-            font_size: "16sp"
-            color: rgba("#8CA4C3")
-            halign: "right"
-            valign: "middle"
-            text_size: self.size
+    CameraPane:
+        id: camera_pane
+        size_hint_x: 0.5
 
-    BoxLayout:
-        spacing: dp(20)
-        CameraPreview:
-            size_hint_x: 0.55
-            image_texture: root.image_texture
-
-        SpectrogramSection:
-            size_hint_x: 0.45
-            spectrogram_data: root.spectrogram_data
-
-    StatusPanel:
-        size_hint_y: None
-        height: dp(96) if self.minimum_height < dp(96) else self.minimum_height
-        substances_text: root.substances_text
+    SpectrogramPane:
+        id: spectrogram_pane
+        size_hint_x: 0.5
