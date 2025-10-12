@@ -1,7 +1,4 @@
 # Raspiscope Python Application
-Thisi is a fork of antlampas/rapiscope-python original code.
-
-# Instructions for Raspiscope Python Application
 
 ## Project Architecture
 - **Modular Design:** Each hardware/software function (e.g., camera, light source, cuvette sensor, analysis, logger, GUI) is implemented as a separate module class (see `camera.py`, `lightSource.py`, etc.), inheriting from the abstract `Module` base class (`module.py`).
@@ -12,11 +9,9 @@ Thisi is a fork of antlampas/rapiscope-python original code.
 
 ## Developer Workflows
 - **Unit Tests:** Located in `tests/unit/`. Each module has a corresponding test file. Run all tests with:
-  ```powershell
-  python -m unittest discover tests/unit
-  ```
+  ```python -m unittest discover tests/unit```
   Or run individual tests as in CI (`.github/workflows/unitTests.yml`).
-- **Dependencies:** Install with `pip install -r requirements.txt`. Some modules require hardware-specific libraries (see `requirements.txt`).
+- **Dependencies:** `apt install libcap-dev python3-dev qtbase5-dev python3-libcamera` `pip install -r requirements.txt`
 - **Debugging:** Each module logs via the Logger module. Use log messages for tracing inter-module communication and errors.
 - **Configuration Changes:** Edit `config.json` to enable/disable modules or change hardware/network settings. Restart the app to apply changes.
 
@@ -65,16 +60,10 @@ ITALIANO
 
 ## Flussi di Lavoro per gli Sviluppatori
 - **Test unitari:** In `tests/unit/`. Ogni modulo ha un file di test corrispondente. Per eseguire tutti i test:
-  ```powershell
-  python -m unittest discover tests/unit
-  ```
+  ```python -m unittest discover tests/unit```
   Oppure esegui test singoli come in CI (`.github/workflows/unitTests.yml`).
 
-- **Dipendenze:** Installa con:
-  ```bash
-  pip install -r requirements.txt
-  ```
-  Alcuni moduli richiedono librerie specifiche per l’hardware (vedi `requirements.txt`).
+- **Dipendenze:** `apt install libcap-dev python3-dev qtbase5-dev python3-libcamera` `pip install -r requirements.txt`
 
 - **Debug:** Ogni modulo effettua logging tramite il modulo Logger. Usa i messaggi di log per tracciare la comunicazione inter‑modulo e gli errori.
 

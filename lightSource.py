@@ -35,7 +35,7 @@ class LightSource(Module):
         self.r          = self.config.get('r', 255)
         self.g          = self.config.get('g', 255)
         self.b          = self.config.get('b', 255)
-        self.color      = Color(self.r,self.g,self.b)
+        self.color      = Color(self.b,self.g,self.r)
         self.is_on      = False
 
 
@@ -153,7 +153,7 @@ class LightSource(Module):
 
         self.log("INFO", f"Setting LED color to R:{r}, G:{g}, B:{b}...")
         self.r, self.g, self.b = r, g, b
-        self.color = Color(r, g, b)
+        self.color = Color(self.b,self.g,self.r)
         self.led.setPixelColor(0,self.color)
         self.led.show()
         self.is_on = True
