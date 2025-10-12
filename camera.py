@@ -32,7 +32,7 @@ class Camera(Module):
         else:
             self.resolution = (1920, 1080)
         self.gain     = self.config.get('gain', 1.0)
-        self.exposure = self.config.get('exposure', 1000)
+        self.exposure = self.config.get('exposure', 10000)
         self.camera   = None
 
 
@@ -69,17 +69,23 @@ class Camera(Module):
             self.log("INFO","Received 'Cuvette Present' signal. Taking a picture.")
             picture = self.takePicture()
             if picture:
-                self.sendMessage("Analyze","Analyze",picture)
+                self.sendMessage("Analysis","Analyze",picture)
+            else:
+                self.log("ERROR","Failed to take a picture.")
         elif msgType == "Take":
             self.log("INFO","Received 'Take' command. Taking a picture.")
             picture = self.takePicture()
             if picture:
                 self.sendMessage("All","PictureTaken",picture)
+            else:
+                self.log("ERROR","Failed to take a picture.")
         elif msgType == "Analyze":
             self.log("INFO","Received 'Analyze' command. Starting analysis.")
             picture = self.takePicture()
             if picture:
                 self.sendMessage("Analysis","Analyze",picture)
+            else:
+                self.log("ERROR","Failed to take a picture.")
         elif msgType == "Calibrate":
             self.log("INFO","Received 'Calibrate' command. Starting calibration.")
             self.calibrate()

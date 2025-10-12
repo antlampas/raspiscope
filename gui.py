@@ -251,6 +251,7 @@ class GUI(Module, App):
         self._message_thread: Optional[Thread] = None
         self._stop_observer = None
         self.main_layout: Optional[MainLayout] = None
+        self._capture_in_progress = False
 
     def build(self):
         self.main_layout = MainLayout()
@@ -306,8 +307,9 @@ class GUI(Module, App):
         key = normalized.replace(" ", "").lower()
         if key in {"help", "?"}:
             return "Comandi disponibili: takePicture, analyze, CalibrateCamera, CalibrateCuvette, lightOn, lightOff"
+        if key == "takepicture":
+            return self._handle_take_picture_request()
         commands = {
-            "takepicture": ("Camera", "Take", "Richiesta di acquisizione immagine inviata al modulo camera."),
             "analyze": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
             "analysis": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
             "calibratecamera": ("Camera", "Calibrate", "Calibrazione della camera avviata."),
@@ -322,34 +324,45 @@ class GUI(Module, App):
         self.sendMessage(destination, message_type)
         return feedback
 
+    def _handle_take_picture_request(self) -> str:
+        if self._capture_in_progress:
+            return "Acquisizione già in corso, attendere il completamento."
+        self._capture_in_progress = True
+        self.sendMessage("LightSource", "TurnOn")
+        self.sendMessage("Camera", "Take")
+        return "Richiesta di acquisizione immagine inviata al modulo camera."
+
     def handleMessage(self, message):
         msg = message.get("Message", {})
         msg_type = msg.get("type")
         payload = msg.get("payload", {})
         if msg_type == "PictureTaken":
-            self.log("INFO", "Picture taken")
-            image_b64 = payload.get("image")
-            if image_b64:
-                try:
-                    image_bytes = base64.b64decode(image_b64)
-                except (ValueError, TypeError) as exc:
-                    self.log("ERROR", f"Failed to decode image: {exc}")
-                    Clock.schedule_once(
-                        lambda _dt, text=f"Errore nel decodificare l'immagine: {exc}": self._append_cli_text(text),
-                        0,
-                    )
+            try:
+                self.log("INFO", "Picture taken")
+                image_b64 = payload.get("image")
+                if image_b64:
+                    try:
+                        image_bytes = base64.b64decode(image_b64)
+                    except (ValueError, TypeError) as exc:
+                        self.log("ERROR", f"Failed to decode image: {exc}")
+                        Clock.schedule_once(
+                            lambda _dt, text=f"Errore nel decodificare l'immagine: {exc}": self._append_cli_text(text),
+                            0,
+                        )
+                    else:
+                        self.log("INFO", "Updating image")
+                        Clock.schedule_once(lambda _dt, data=image_bytes: self._update_image(data))
+                        Clock.schedule_once(
+                            lambda _dt: self._append_cli_text("Immagine acquisita dal modulo camera."),
+                            0,
+                        )
                 else:
-                    self.log("INFO", "Updating image")
-                    Clock.schedule_once(lambda _dt, data=image_bytes: self._update_image(data))
                     Clock.schedule_once(
-                        lambda _dt: self._append_cli_text("Immagine acquisita dal modulo camera."),
+                        lambda _dt: self._append_cli_text("Nessuna immagine fornita dal modulo camera."),
                         0,
                     )
-            else:
-                Clock.schedule_once(
-                    lambda _dt: self._append_cli_text("Nessuna immagine fornita dal modulo camera."),
-                    0,
-                )
+            finally:
+                self._finalize_capture()
         elif msg_type == "AnalysisComplete":
             self.log("INFO", "Analysis complete")
             spectrogram = payload.get("spectrogram_data") or []
@@ -377,6 +390,11 @@ class GUI(Module, App):
                 lambda _dt, text=f"Errore analisi: {error_message}": self._append_cli_text(text),
                 0,
             )
+        elif msg_type == "CameraError":
+            error_message = payload.get("message") or payload.get("error") or "Errore sconosciuto dalla camera"
+            self.log("ERROR", f"Camera error: {error_message}")
+            Clock.schedule_once(lambda _dt, text=error_message: self._append_cli_text(text), 0)
+            self._finalize_capture()
 
     def _update_image(self, image_bytes: bytes) -> None:
         if self.main_layout is None:
@@ -395,3 +413,9 @@ class GUI(Module, App):
         if self.main_layout is None:
             return
         self.main_layout.show_analysis_error(message)
+
+    def _finalize_capture(self) -> None:
+        if not self._capture_in_progress:
+            return
+        self.sendMessage("LightSource", "TurnOff")
+        self._capture_in_progress = False

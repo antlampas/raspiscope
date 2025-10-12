@@ -95,6 +95,7 @@ class Analysis(Module):
             self.sendAnalysisResults(results)
 
         except Exception as e:
+            self.log("ERROR",{"error": str(e)})
             self.sendMessage("All","AnalysisError",{"error": str(e)})
 
     def extractSpectrogramProfile(self,imageData):
@@ -174,8 +175,11 @@ class Analysis(Module):
             estimatedWavelengthNm = peakIdx * pixelToNmFactor + 400 # Example offset
             
             # Comparison with reference data using numpy.isclose for tolerance
-            for _,row in self.referenceSpectra.iterrows():
-                refWavelength = row['wavelength']
+            for refIndex,row in self.referenceSpectra.iterrows():
+                try:
+                    refWavelength = float(refIndex)
+                except (TypeError,ValueError):
+                    continue
                 
                 if numpy.isclose(estimatedWavelengthNm,refWavelength,atol=self.toleranceNm):
                     substance = row['substance']

@@ -30,8 +30,8 @@
     "camera": {
       "enabled": true,
       "resolution": [1920,1080],
-      "gain" : 1,
-      "exposure" : 10
+      "gain" : 1.0,
+      "exposure" : 10000
     },
     "analysis": {
       "enabled": true,
