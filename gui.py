@@ -307,13 +307,14 @@ class GUI(Module, App):
         key = normalized.replace(" ", "").lower()
         if key in {"help", "?"}:
             return "Comandi disponibili: takePicture, analyze, CalibrateCamera, CalibrateCuvette, lightOn, lightOff"
-        if key == "takepicture":
-            return self._handle_take_picture_request()
+        #if key == "takepicture":
+        #    return self._handle_take_picture_request()
         commands = {
             "analyze": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
             "analysis": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
             "calibratecamera": ("Camera", "Calibrate", "Calibrazione della camera avviata."),
             "calibratecuvette": ("CuvetteSensor", "Calibrate", "Calibrazione della cuvetta avviata."),
+            "takepicture": ("Camera", "Take", "Richiesta di acquisizione immagine"),
             "lighton": ("LightSource", "TurnOn", "Sorgente luminosa accesa."),
             "lightoff": ("LightSource", "TurnOff", "Sorgente luminosa spenta."),
         }

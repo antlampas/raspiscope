@@ -70,20 +70,31 @@ class Camera(Module):
             picture = self.takePicture()
             if picture:
                 self.sendMessage("Analysis","Analyze",picture)
+                self.log("INFO","Picture taken and sent for analysis.")
+                self.sendMessage("GUI","PictureTaken",picture)
+                self.log("INFO","Picture sent to GUI.")
             else:
                 self.log("ERROR","Failed to take a picture.")
         elif msgType == "Take":
             self.log("INFO","Received 'Take' command. Taking a picture.")
+            self.sendMessage("LightSource","TurnOn")
             picture = self.takePicture()
+            self.sendMessage("LightSource","TurnOff")
             if picture:
                 self.sendMessage("All","PictureTaken",picture)
+                self.log("INFO","Picture taken and sent to anyone listening.")
             else:
                 self.log("ERROR","Failed to take a picture.")
         elif msgType == "Analyze":
             self.log("INFO","Received 'Analyze' command. Starting analysis.")
+            self.sendMessage("LightSource","TurnOn")
             picture = self.takePicture()
+            self.sendMessage("LightSource","TurnOff")
             if picture:
                 self.sendMessage("Analysis","Analyze",picture)
+                self.log("INFO","Picture taken and sent for analysis.")
+                self.sendMessage("GUI","PictureTaken",picture)
+                self.log("INFO","Picture sent to GUI.")
             else:
                 self.log("ERROR","Failed to take a picture.")
         elif msgType == "Calibrate":
