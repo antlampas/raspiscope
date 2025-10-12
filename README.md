@@ -49,8 +49,6 @@ _If any section is unclear or missing, please provide feedback for further refin
 
 ITALIANO
 
-# Istruzioni per Copilot – Applicazione Python **Raspiscope**
-
 ## Architettura del Progetto
 - **Design modulare:** Ogni funzione hardware/software (es. fotocamera, sorgente luminosa, sensore della cuvetta, analisi, logger, GUI) è implementata come classe modulo separata (vedi `camera.py`, `lightSource.py`, ecc.), che eredita dalla classe base astratta `Module` (`module.py`).
 - **EventManager:** L’orchestratore centrale (`eventManager.py`) viene eseguito come processo, instrada i messaggi tra i moduli e gestisce il ciclo di vita (registrazione, arresto, ecc.).
