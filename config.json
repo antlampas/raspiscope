@@ -21,11 +21,7 @@
     "cuvetteSensor": {
       "enabled": true,
       "pin": 17,
-      "poll_interval_s": 0.1,
-      "calibration": {
-        "samples": 100,
-        "threshold_span": 0.1
-      }
+      "poll_interval_s": 0.1
     },
     "camera": {
       "enabled": true,

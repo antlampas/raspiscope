@@ -24,15 +24,11 @@ class CuvetteSensor(Module):
 
         super().__init__("CuvetteSensor",networkConfig,systemConfig)
         self.config            = moduleConfig or {}
-        calibrationCfg         = self.config.get('calibration', {})
         self.inputPin          = self.config.get('pin')
         self.sensor            = None
-        self.presenceThreshold = self.config.get('presence_threshold', 0)
-        self.thresholdSpan     = calibrationCfg.get('threshold_span', 0)
         self.pollInterval      = self.config.get('poll_interval_s', 1.0)
         self.isPresent         = False
         self.numSamples        = calibrationCfg.get('samples', 0)
-
 
     def onStart(self):
         """
@@ -58,71 +54,19 @@ class CuvetteSensor(Module):
         if not self.sensor:
             time.sleep(1)
             return
-
+        previousState = self.checkPresence()
         while not self.stopEvent.is_set():
-            self.checkPresence()
-            time.sleep(self.pollInterval)
-
-    def checkPresence(self):
-        """
-        Checks the sensor value and sends a signal if the state changes.
-        """
-        try:
-            currentValue     = self.sensor.value
-            currentlyPresent = currentValue < self.presenceThreshold
-
-            if currentlyPresent and not self.isPresent:
-                self.isPresent = True
-                self.sendMessage("Camera","CuvettePresent")
-            elif not currentlyPresent and self.isPresent:
-                self.isPresent = False
-                self.sendMessage("Camera","CuvetteAbsent")
-        except Exception as e:
-            self.log("ERROR",f"Error while reading the sensor: {e}")
-            self.stopEvent.set()
-
-    def calibrate(self):
-        """
-        Performs calibration to set the presence threshold.
-        Assumes the cuvette is NOT present during calibration.
-        """
-        if not self.sensor:
-            self.sendMessage("All", "CalibrationError", {"message": "Cannot calibrate: sensor not initialized."})
-            return
-
-        self.sendMessage("All", "CalibrationStarted", {"message": f"Starting cuvette sensor calibration ({self.numSamples} samples)..."})
-        samples = []
-        try:
-            for _ in range(self.numSamples):
-                samples.append(self.sensor.value)
-                time.sleep(0.01)
-
-            if samples:
-                meanValue = statistics.mean(samples)
-                self.thresholdSpan = (max(samples) - min(samples)) / 2
-                self.presenceThreshold = meanValue - self.thresholdSpan
-
-                # Keep in-memory configuration updated for subsequent operations
-                self.config['presence_threshold'] = self.presenceThreshold
-                calibrationCfg = self.config.setdefault('calibration', {})
-                calibrationCfg['threshold_span'] = self.thresholdSpan
-                calibrationCfg['samples'] = self.numSamples
-
-                # Save config to file
-                try:
-                    with open('config.json', 'r+') as f:
-                        data = json.load(f)
-                        data['modules']['cuvetteSensor']['threshold_span']     = self.thresholdSpan
-                        data['modules']['cuvetteSensor']['presence_threshold'] = self.presenceThreshold
-                        f.seek(0)
-                        json.dump(data, f, indent=2)
-                        f.truncate()
-                    self.log("INFO", "Calibration settings saved to config.json.")
-                except (IOError, json.JSONDecodeError) as e:
-                    self.log("ERROR", f"Could not save calibration settings to config.json: {e}")
-
-                self.sendMessage("All", "CalibrationComplete", {"threshold": self.presenceThreshold, "message": "Calibration complete."})
+            if self.sensor.is_active:
+                currentState = True
             else:
-                self.sendMessage("All", "CalibrationError", {"message": "No samples collected during calibration."})
-        except Exception as e:
-            self.sendMessage("All", "CalibrationError", {"message": f"An error occurred during calibration: {e}"})
+                currentState = False
+            if currentState != previousState:
+                self.isPresent = currentState
+                if self.isPresent:
+                    self.sendMessage("Camera","CuvettePresent")
+                    self.log("INFO","Cuvette detected.")
+                else:
+                    self.sendMessage("Camera","CuvetteAbsent")
+                    self.log("INFO","Cuvette absent.")
+                previousState = currentState
+            time.sleep(self.pollInterval)
