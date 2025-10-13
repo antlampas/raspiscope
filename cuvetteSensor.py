@@ -28,11 +28,10 @@ class CuvetteSensor(Module):
         self.sensor            = None
         self.pollInterval      = self.config.get('poll_interval_s', 1.0)
         self.isPresent         = False
-        self.numSamples        = calibrationCfg.get('samples', 0)
 
     def onStart(self):
         """
-        Initializes the sensor and starts calibration.
+        Initializes the sensor.
         """
         self.sendMessage("EventManager", "Register")
         try:
@@ -54,12 +53,9 @@ class CuvetteSensor(Module):
         if not self.sensor:
             time.sleep(1)
             return
-        previousState = self.checkPresence()
+        previousState = not self.sensor.is_active
         while not self.stopEvent.is_set():
-            if self.sensor.is_active:
-                currentState = True
-            else:
-                currentState = False
+            currentState = not self.sensor.is_active
             if currentState != previousState:
                 self.isPresent = currentState
                 if self.isPresent:

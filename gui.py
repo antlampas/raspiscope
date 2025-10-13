@@ -316,7 +316,6 @@ class GUI(Module, App):
             "analyze": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
             "analysis": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
             "calibratecamera": ("Camera", "Calibrate", "Calibrazione della camera avviata."),
-            "calibratecuvette": ("CuvetteSensor", "Calibrate", "Calibrazione della cuvetta avviata."),
             "takepicture": ("Camera", "Take", "Richiesta di acquisizione immagine"),
             "lighton": ("LightSource", "TurnOn", "Sorgente luminosa accesa."),
             "lightoff": ("LightSource", "TurnOff", "Sorgente luminosa spenta."),

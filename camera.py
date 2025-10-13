@@ -77,9 +77,7 @@ class Camera(Module):
                 self.log("ERROR","Failed to take a picture.")
         elif msgType == "Take":
             self.log("INFO","Received 'Take' command. Taking a picture.")
-            self.sendMessage("LightSource","TurnOn")
             picture = self.takePicture()
-            self.sendMessage("LightSource","TurnOff")
             if picture:
                 self.sendMessage("All","PictureTaken",picture)
                 self.log("INFO","Picture taken and sent to anyone listening.")
@@ -87,9 +85,7 @@ class Camera(Module):
                 self.log("ERROR","Failed to take a picture.")
         elif msgType == "Analyze":
             self.log("INFO","Received 'Analyze' command. Starting analysis.")
-            self.sendMessage("LightSource","TurnOn")
             picture = self.takePicture()
-            self.sendMessage("LightSource","TurnOff")
             if picture:
                 self.sendMessage("Analysis","Analyze",picture)
                 self.log("INFO","Picture taken and sent for analysis.")
@@ -112,7 +108,9 @@ class Camera(Module):
         try:
             self.log("INFO","Taking picture...")
             # Capture the image as a numpy array
+            self.sendMessage("LightSource","TurnOn")
             imageArray = self.camera.capture_array()
+            self.sendMessage("LightSource","TurnOff")
 
             # Encode the image in JPG format and then in Base64
             _,buffer = cv2.imencode('.jpg',imageArray)
