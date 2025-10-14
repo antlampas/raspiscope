@@ -5,12 +5,6 @@
 #:import dp kivy.metrics.dp
 
 <CameraPane@RelativeLayout>:
-    canvas.before:
-        Color:
-            rgba: 0.0, 0.2, 0.6, 1
-        Rectangle:
-            pos: self.pos
-            size: self.size
     Image:
         id: camera_image
         allow_stretch: True

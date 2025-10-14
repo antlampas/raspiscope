@@ -71,8 +71,6 @@ class Camera(Module):
             if picture:
                 self.sendMessage("Analysis","Analyze",picture)
                 self.log("INFO","Picture taken and sent for analysis.")
-                self.sendMessage("GUI","PictureTaken",picture)
-                self.log("INFO","Picture sent to GUI.")
             else:
                 self.log("ERROR","Failed to take a picture.")
         elif msgType == "Take":
@@ -89,8 +87,6 @@ class Camera(Module):
             if picture:
                 self.sendMessage("Analysis","Analyze",picture)
                 self.log("INFO","Picture taken and sent for analysis.")
-                self.sendMessage("GUI","PictureTaken",picture)
-                self.log("INFO","Picture sent to GUI.")
             else:
                 self.log("ERROR","Failed to take a picture.")
         elif msgType == "Calibrate":

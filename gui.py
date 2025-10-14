@@ -363,11 +363,12 @@ class GUI(Module, App):
             return "Nessun comando inserito."
         key = normalized.replace(" ", "").lower()
         if key in {"help", "?"}:
-            return "Comandi disponibili: takePicture, analyze, CalibrateCamera, CalibrateCuvette, lightOn, lightOff"
+            return "Comandi disponibili: takePicture, analyze, CalibrateCamera, CalibrateAnalysis, lightOn, lightOff"
         commands = {
             "analyze": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
             "analysis": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
             "calibratecamera": ("Camera", "Calibrate", "Calibrazione della camera avviata."),
+            "calibrateanalysis": ("Analysis", "Calibrate", "Calibrazione del modulo Analysis avviata."),
             "takepicture": ("Camera", "Take", "Richiesta di acquisizione immagine"),
             "lighton": ("LightSource", "TurnOn", "Sorgente luminosa accesa."),
             "lightoff": ("LightSource", "TurnOff", "Sorgente luminosa spenta."),
@@ -434,6 +435,22 @@ class GUI(Module, App):
                 lambda _dt, text=f"Errore analisi: {error_message}": self._append_cli_text(text),
                 0,
             )
+        elif msg_type == "AnalysisCalibration":
+            status = (payload or {}).get("status", "").lower()
+            if status == "started":
+                feedback = "Calibrazione Analysis avviata."
+                self.log("INFO", feedback)
+            elif status == "completed":
+                feedback = "Calibrazione Analysis completata."
+                self.log("INFO", feedback)
+            elif status == "error":
+                message = payload.get("message") or "Errore durante la calibrazione Analysis."
+                feedback = f"Calibrazione Analysis fallita: {message}"
+                self.log("ERROR", feedback)
+            else:
+                feedback = f"Aggiornamento calibrazione Analysis: {payload}"
+                self.log("INFO", feedback)
+            Clock.schedule_once(lambda _dt, text=feedback: self._append_cli_text(text), 0)
         elif msg_type == "CameraError":
             error_message = payload.get("message") or payload.get("error") or "Errore sconosciuto dalla camera"
             self.log("ERROR", f"Camera error: {error_message}")

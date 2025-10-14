@@ -22,10 +22,15 @@ class Analysis(Module):
     """
     def __init__(self,config,networkConfig,systemConfig):
         super().__init__("Analysis",networkConfig,systemConfig)
-        self.config               = config
-        self.referenceSpectraPath = self.config['reference_spectra_path']
-        self.toleranceNm          = self.config['tolerance_nm']
-        self.referenceSpectra     = None
+        self.config                = config
+        self.networkConfig         = networkConfig
+        self.systemConfig          = systemConfig
+        self.referenceSpectraPath  = self.config['reference_spectra_path']
+        self.toleranceNm           = self.config['tolerance_nm']
+        self.referenceSpectra      = None
+        self.baseIntensityProfile  = self.config.get("base_intensity_profile")
+        self.calibrationInProgress = False
+        self._config_path          = self.systemConfig.get("config_path","config.json")
 
     def onStart(self):
         """
@@ -66,29 +71,115 @@ class Analysis(Module):
         msgType = message.get("Message",{}).get("type")
         payload = message.get("Message",{}).get("payload",{})
 
+        if msgType == "Calibrate":
+            self.calibrate()
+            return
+
         if msgType == "Analyze":
-            self.sendMessage("All","AnalysisRequested",{"status": "received"})
-            if self.referenceSpectra is None:
-                self.sendMessage("All",
-                                 "AnalysisError",
-                                 {
-                                    "message": "Cannot analyze: reference data not loaded."
-                                 }
-                                )
-                return
+            if not self.calibrationInProgress:
+                self.sendMessage("All","AnalysisRequested",{"status": "received"})
+                if self.referenceSpectra is None:
+                    self.sendMessage("All",
+                                     "AnalysisError",
+                                     {
+                                        "message": "Cannot analyze: reference data not loaded."
+                                     }
+                                    )
+                    return
 
             imageB64 = payload.get("image")
-            if imageB64:
-                # Decode the image from Base64
-                imgBytes = base64.b64decode(imageB64)
-                imgNp = numpy.frombuffer(imgBytes,dtype=numpy.uint8)
-                imageData = cv2.imdecode(imgNp,cv2.IMREAD_COLOR)
+            if not imageB64:
+                errorMsg = "'Analyze' command received without image data."
+                self.sendMessage("All","AnalysisError",{"message": errorMsg})
+                if self.calibrationInProgress:
+                    self._calibrationFailed(errorMsg)
+                return
 
-                # Start analysis in a separate thread to avoid blocking
-                analysisThread = Thread(target=self.performAnalysis,args=(imageData,))
-                analysisThread.start()
+            # Decode the image from Base64
+            imgBytes = base64.b64decode(imageB64)
+            imgNp = numpy.frombuffer(imgBytes,dtype=numpy.uint8)
+            imageData = cv2.imdecode(imgNp,cv2.IMREAD_COLOR)
+
+            if imageData is None:
+                errorMsg = "Failed to decode image data for analysis."
+                self.sendMessage("All","AnalysisError",{"message": errorMsg})
+                if self.calibrationInProgress:
+                    self._calibrationFailed(errorMsg)
+                return
+
+            # Start the appropriate processing in a separate thread to avoid blocking
+            if self.calibrationInProgress:
+                worker = Thread(target=self._performCalibration,args=(imageData,))
             else:
-                self.sendMessage("All","AnalysisError",{"message": "'Analyze' command received without image data."})
+                worker = Thread(target=self.performAnalysis,args=(imageData,))
+            worker.start()
+
+    def calibrate(self):
+        """
+        Initiates the base spectrum calibration by requesting an image from the camera.
+        """
+        if self.calibrationInProgress:
+            self.log("WARNING","Calibration request ignored: already in progress.")
+            return
+
+        self.calibrationInProgress = True
+        self.sendMessage("All","AnalysisCalibration",{"status": "started"})
+        self.log("INFO","Starting base spectrum calibration: requesting image from camera.")
+
+        try:
+            self.sendMessage("Camera","Analyze")
+        except Exception as exc:
+            self._calibrationFailed(f"Failed to request calibration image: {exc}")
+
+    def _performCalibration(self,imageData):
+        """
+        Processes the calibration image, stores the baseline intensity profile,
+        and persists it to the configuration file.
+        """
+        try:
+            intensityProfile = self.extractSpectrogramProfile(imageData)
+            if intensityProfile is None or len(intensityProfile) == 0:
+                raise ValueError("Extracted calibration intensity profile is empty.")
+
+            baseProfile = [float(value) for value in numpy.asarray(intensityProfile).tolist()]
+            self.baseIntensityProfile = baseProfile
+            self.config["base_intensity_profile"] = baseProfile
+            self._persist_base_profile(baseProfile)
+
+            self.sendMessage("All","AnalysisCalibration",{"status": "completed"})
+            self.log("INFO","Base spectrum calibration completed successfully.")
+        except Exception as exc:
+            self._calibrationFailed(str(exc))
+        finally:
+            self.calibrationInProgress = False
+
+    def _persist_base_profile(self,baseProfile):
+        """
+        Persists the base intensity profile to the JSON configuration file.
+        """
+        try:
+            with open(self._config_path,"r",encoding="utf-8") as cfgFile:
+                data = json.load(cfgFile)
+
+            modulesCfg = data.setdefault("modules",{})
+            analysisCfg = modulesCfg.setdefault("analysis",{})
+            analysisCfg["base_intensity_profile"] = baseProfile
+
+            with open(self._config_path,"w",encoding="utf-8") as cfgFile:
+                json.dump(data,cfgFile,indent=2)
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"Configuration file '{self._config_path}' not found.") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Failed to persist base profile to '{self._config_path}': {exc}") from exc
+
+    def _calibrationFailed(self,message):
+        """
+        Handles calibration failures by logging and notifying other modules.
+        """
+        self.calibrationInProgress = False
+        self.sendMessage("All","AnalysisCalibration",{"status": "error","message": message})
+        self.log("ERROR",f"Calibration failed: {message}")
+
     def performAnalysis(self,imageData):
         """
         Performs a complete analysis of a spectroscopic absorption image
@@ -101,7 +192,9 @@ class Analysis(Module):
         
         try:
             # Phase 1: Data Extraction and Pre-processing
-            intensityProfile = self.extractSpectrogramProfile(imageData)
+            intensityProfile = numpy.asarray(self.extractSpectrogramProfile(imageData),dtype=numpy.float32)
+            if intensityProfile.size == 0:
+                raise ValueError("Empty intensity profile extracted from image.")
             
             # Phase 2: Valley Detection (Points of maximum absorbance)
             peaksIndices = self.detectAbsorbanceValleys(intensityProfile)
@@ -128,28 +221,17 @@ class Analysis(Module):
         """
         height,width = imageData.shape[:2]
 
-        gray = cv2.cvtColor(imageData,cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray,(5,5),0)
-        clahe = cv2.createCLAHE(clipLimit=2.0,tileGridSize=(8,8))
-        enhanced = clahe.apply(blurred)
+        manualRect = (110,720,300,10)
+        x,y,w,h = manualRect
+        xStart = max(0,int(x))
+        yStart = max(0,int(y))
+        xEnd = min(width,xStart + int(w))
+        yEnd = min(height,yStart + int(h))
+        if xEnd <= xStart or yEnd <= yStart:
+            raise ValueError("Configured manual ROI is invalid for the current image dimensions.")
 
-        bandRect = self._locate_spectrum_band(enhanced)
-
-        if bandRect:
-            x,y,w,h = bandRect
-            padY = int(h * 0.1)
-            padX = int(w * 0.05)
-            yStart = max(0,y - padY)
-            yEnd = min(height,y + h + padY)
-            xStart = max(0,x - padX)
-            xEnd = min(width,x + w + padX)
-            roi = imageData[yStart:yEnd,xStart:xEnd]
-        else:
-            self.log("WARNING","Failed to detect spectrum band automatically, using centered fallback ROI.")
-            roiHeight = max(20,int(height * 0.1))
-            yStart = max(0,height // 2 - roiHeight // 2)
-            yEnd = min(height,yStart + roiHeight)
-            roi = imageData[yStart:yEnd,:]
+        self.log("INFO",f"Using manual ROI: x={xStart}, y={yStart}, width={xEnd - xStart}, height={yEnd - yStart}.")
+        roi = imageData[yStart:yEnd,xStart:xEnd]
 
         roiGray = cv2.cvtColor(roi,cv2.COLOR_BGR2GRAY)
 
@@ -158,88 +240,18 @@ class Analysis(Module):
             if not success:
                 raise RuntimeError("Failed to encode ROI image.")
             return base64.b64encode(buffer).decode("utf-8")
-
-        time.sleep(5)
+            
         try:
             roi_b64 = encode_image_to_base64(roi)
             self.sendMessage("GUI","PictureTaken",{"image": roi_b64})
             self.log("INFO","ROI extracted and sent to GUI.")
-            time.sleep(5)
         except Exception as exc:
             self.log("WARNING",f"Failed to send ROI to GUI: {exc}")
-
-        try:
-            roi_gray_b64 = encode_image_to_base64(roiGray)
-            self.sendMessage("GUI","PictureTaken",{"image": roi_gray_b64})
-            self.log("INFO","ROI GREY extracted and sent to GUI.")
-            time.sleep(5)
-        except Exception as exc:
-            self.log("WARNING",f"Failed to send ROI Gray to GUI: {exc}")
         
         # Calculating the 1D intensity profile by averaging along the rows
         intensityProfile = numpy.mean(roiGray,axis=0)
         
         return intensityProfile
-        
-    def _locate_spectrum_band(self,enhancedImage):
-        """
-        Locate the bounding rectangle of the spectral band by evaluating contours
-        produced with orientation-aware morphology.
-        """
-        height,width = enhancedImage.shape[:2]
-        edges = cv2.Canny(enhancedImage,50,150)
-        kernels = [
-            ("horizontal",cv2.getStructuringElement(cv2.MORPH_RECT,(31,5))),
-            ("vertical",cv2.getStructuringElement(cv2.MORPH_RECT,(5,31))),
-        ]
-        minArea = max(0.002 * width * height,500.0)
-        candidates = []
-
-        for orientation,kernel in kernels:
-            closed = cv2.morphologyEx(edges,cv2.MORPH_CLOSE,kernel,iterations=2)
-            dilated = cv2.dilate(closed,kernel,iterations=1)
-            contours = cv2.findContours(dilated,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-            contours = contours[0] if len(contours) == 2 else contours[1]
-
-            for cnt in contours:
-                x,y,w,h = cv2.boundingRect(cnt)
-                area = w * h
-                if area < minArea or w <= 0 or h <= 0:
-                    continue
-
-                aspectRatio = w / float(max(h,1))
-                ratioScore = self._aspect_ratio_score(aspectRatio,orientation)
-                if ratioScore < 0.1:
-                    continue
-
-                roiEnhanced = enhancedImage[y:y+h,x:x+w]
-                if roiEnhanced.size == 0:
-                    continue
-
-                intensity = float(numpy.mean(roiEnhanced))
-                contrast = float(numpy.std(roiEnhanced))
-                intensityScore = 0.5 + (intensity / 255.0)
-                contrastScore = 0.5 + min(1.0,contrast / 64.0)
-                compositeScore = area * ratioScore * intensityScore * contrastScore
-                candidates.append((compositeScore,(x,y,w,h)))
-
-        if not candidates:
-            return None
-
-        candidates.sort(key=lambda item: item[0],reverse=True)
-        return candidates[0][1]
-
-    @staticmethod
-    def _aspect_ratio_score(aspectRatio,orientation):
-        """
-        Score how well the aspect ratio fits the expected orientation.
-        """
-        aspectRatio = max(aspectRatio,1e-3)
-        if orientation == "horizontal":
-            target = 5.0
-        else:
-            target = 0.2
-        return math.exp(-abs(math.log(aspectRatio / target)))
 
     def detectAbsorbanceValleys(self,intensityProfile):
         """
@@ -252,9 +264,42 @@ class Analysis(Module):
         Returns:
             numpy.ndarray: The indices of the detected peaks (original valleys).
         """
+        profile = numpy.asarray(intensityProfile,dtype=numpy.float32)
+        if profile.size == 0:
+            return numpy.asarray([],dtype=int)
+
+        workingProfile = numpy.copy(profile)
+        if self.baseIntensityProfile is not None:
+            try:
+                baseArray = numpy.asarray(self.baseIntensityProfile,dtype=numpy.float32)
+            except Exception as exc:
+                self.log("WARNING",f"Failed to convert base intensity profile: {exc}")
+                baseArray = None
+
+            if baseArray is not None and baseArray.size > 0:
+                if baseArray.size != workingProfile.size:
+                    x_base = numpy.linspace(0.0,1.0,num=baseArray.size,endpoint=True)
+                    x_target = numpy.linspace(0.0,1.0,num=workingProfile.size,endpoint=True)
+                    try:
+                        baseResampled = numpy.interp(x_target,x_base,baseArray)
+                    except Exception as exc:
+                        self.log("WARNING",f"Failed to resample base intensity profile: {exc}")
+                        baseResampled = None
+                else:
+                    baseResampled = baseArray
+
+                if baseResampled is not None and baseResampled.size == workingProfile.size:
+                    workingProfile = workingProfile - baseResampled
+                else:
+                    self.log("WARNING","Base intensity profile not used due to shape mismatch.")
+
+        if numpy.allclose(workingProfile.max(),workingProfile.min()):
+            self.log("WARNING","Working profile is nearly flat after baseline subtraction; no valleys detected.")
+            return numpy.asarray([],dtype=int)
+
         # To detect valleys with find_peaks,we invert the signal.
         # Maximum absorption corresponds to the minimum intensity.
-        invertedProfile = numpy.max(intensityProfile) - intensityProfile
+        invertedProfile = numpy.max(workingProfile) - workingProfile
 
         # Finds peaks in the inverted profile,which correspond to the original valleys.
         # The parameters are crucial for filtering noise.
