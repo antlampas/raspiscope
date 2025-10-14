@@ -4,6 +4,7 @@ CC BY-SA 4.0
 https://creativecommons.org/licenses/by-sa/4.0/
 """
 
+import time
 import sys
 import signal
 from multiprocessing import Process
@@ -59,6 +60,8 @@ def main():
             process.start()
             
             running_processes.append({'name': name, 'process': process})
+            time.sleep(0.001)
+
 
     # Run GUI in the main process if it's enabled
     gui_instance = None

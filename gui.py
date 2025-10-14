@@ -9,6 +9,7 @@ from io import BytesIO
 from threading import Thread
 from typing import Optional
 
+import numpy
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.image import Image as CoreImage
@@ -47,6 +48,14 @@ class _PassiveFigureCanvas(FigureCanvasKivyAgg):
 class SpectrogramGraph(BoxLayout):
     """Widget that renders spectrogram data using Matplotlib."""
 
+    # Keep conversion consistent with Analysis.compareWithReferences assumptions.
+    _PIXEL_TO_NM_FACTOR = 0.5
+    _PIXEL_TO_NM_OFFSET = 400.0
+    _SPEED_OF_LIGHT = 299_792_458.0  # m/s
+    _NM_TO_M = 1e-9
+    _THZ_SCALE = 1e12
+    _DEFAULT_VISIBLE_RANGE_NM = (380.0, 780.0)
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._figure = Figure(figsize=(5, 3), dpi=100)
@@ -56,11 +65,24 @@ class SpectrogramGraph(BoxLayout):
         self.add_widget(self._canvas)
         self._draw_placeholder()
 
+    @classmethod
+    def _wavelength_nm_to_thz(cls, wavelength_nm: float) -> float:
+        wavelength_m = wavelength_nm * cls._NM_TO_M
+        return (cls._SPEED_OF_LIGHT / wavelength_m) / cls._THZ_SCALE
+
     def _configure_axes(self) -> None:
-        self._axes.set_xlabel("Frequenza (Hz)")
+        self._axes.set_xlabel("Frequenza (THz)")
         self._axes.set_ylabel("Intensità")
         self._axes.set_title("Spettrogramma")
         self._axes.grid(True, alpha=0.2)
+
+    def _default_xticks(self):
+        high_thz = self._wavelength_nm_to_thz(self._DEFAULT_VISIBLE_RANGE_NM[0])
+        low_thz = self._wavelength_nm_to_thz(self._DEFAULT_VISIBLE_RANGE_NM[1])
+        tick_candidates = numpy.arange(400.0, 801.0, 50.0)
+        mask = (tick_candidates <= high_thz) & (tick_candidates >= low_thz)
+        ticks = tick_candidates[mask]
+        return ticks.tolist() if ticks.size else []
 
     def _draw_placeholder(self) -> None:
         self._axes.clear()
@@ -74,9 +96,36 @@ class SpectrogramGraph(BoxLayout):
             transform=self._axes.transAxes,
             fontsize=12,
         )
-        self._axes.set_xticks([])
+        default_ticks = self._default_xticks()
+        if default_ticks:
+            self._axes.set_xticks(default_ticks)
+        low_thz = self._wavelength_nm_to_thz(self._DEFAULT_VISIBLE_RANGE_NM[1])
+        high_thz = self._wavelength_nm_to_thz(self._DEFAULT_VISIBLE_RANGE_NM[0])
+        self._axes.set_xlim(low_thz, high_thz)
         self._axes.set_yticks([])
         self._canvas.draw()
+
+    def _compute_frequency_axis(self, length: int) -> numpy.ndarray:
+        if length <= 0:
+            return numpy.empty(0, dtype=float)
+        indices = numpy.arange(length, dtype=float)
+        wavelengths_nm = self._PIXEL_TO_NM_FACTOR * indices + self._PIXEL_TO_NM_OFFSET
+        wavelengths_m = wavelengths_nm * self._NM_TO_M
+        frequencies_thz = (self._SPEED_OF_LIGHT / wavelengths_m) / self._THZ_SCALE
+        return frequencies_thz
+
+    def _apply_frequency_ticks(self, freq_axis: numpy.ndarray) -> None:
+        if freq_axis.size == 0:
+            return
+        min_thz = freq_axis.min()
+        max_thz = freq_axis.max()
+        tick_candidates = numpy.arange(400.0, 801.0, 50.0)
+        mask = (tick_candidates >= min_thz) & (tick_candidates <= max_thz)
+        ticks = tick_candidates[mask]
+        if ticks.size:
+            self._axes.set_xticks(ticks)
+        else:
+            self._axes.set_xticks(numpy.linspace(max_thz, min_thz, num=5))
 
     def update_data(self, values) -> None:
         self._axes.clear()
@@ -93,9 +142,12 @@ class SpectrogramGraph(BoxLayout):
             self._draw_placeholder()
             return
         try:
-            x_values = list(range(len(data)))
-            self._axes.plot(x_values, data, color="#1f77b4", linewidth=1.5)
+            freq_axis = self._compute_frequency_axis(len(data))
+            self._axes.plot(freq_axis, data, color="#1f77b4", linewidth=1.5)
             self._configure_axes()
+            self._apply_frequency_ticks(freq_axis)
+            if freq_axis.size:
+                self._axes.set_xlim(freq_axis.min(), freq_axis.max())
         except Exception as exc:
             Logger.warning(f"GUI: failed to draw spectrogram: {exc}")
             self._draw_placeholder()
