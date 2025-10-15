@@ -11,8 +11,9 @@ import time
 import base64
 import json
 import math
+import os
 from scipy.signal import find_peaks
-from threading    import Thread
+from threading    import Thread, Lock
 from module       import Module
 
 class Analysis(Module):
@@ -31,6 +32,9 @@ class Analysis(Module):
         self.baseIntensityProfile  = self.config.get("base_intensity_profile")
         self.calibrationInProgress = False
         self._config_path          = self.systemConfig.get("config_path","config.json")
+        self._newSubstanceLock     = Lock()
+        self._newSubstanceState    = None
+        self._referenceLock        = Lock()
 
     def onStart(self):
         """
@@ -55,10 +59,11 @@ class Analysis(Module):
                     spectra.append((wavelength,dict(row)))
 
                 if not spectra:
-                    raise ValueError("No valid reference data rows found.")
-
-                self.referenceSpectra = sorted(spectra,key=lambda item: item[0])
-                self.log("INFO", f"Reference spectra loaded successfully from {self.referenceSpectraPath} ({len(self.referenceSpectra)} entries).")
+                    self.referenceSpectra = []
+                    self.log("WARNING", f"Reference spectra file '{self.referenceSpectraPath}' is empty. Analysis will run without reference matches until data is added.")
+                else:
+                    self.referenceSpectra = sorted(spectra,key=lambda item: item[0])
+                    self.log("INFO", f"Reference spectra loaded successfully from {self.referenceSpectraPath} ({len(self.referenceSpectra)} entries).")
         except FileNotFoundError:
             self.log("ERROR", f"Reference file not found at {self.referenceSpectraPath}. Analysis module will not work correctly.")
         except Exception as e:
@@ -71,11 +76,33 @@ class Analysis(Module):
         msgType = message.get("Message",{}).get("type")
         payload = message.get("Message",{}).get("payload",{})
 
-        if msgType == "Calibrate":
+        if msgType == "PictureTaken":
+            self._handleNewSubstanceCapture(payload)
+            return
+        elif msgType == "Calibrate":
             self.calibrate()
             return
-
-        if msgType == "Analyze":
+        elif msgType == "AddSubstance":
+            self.sendMessage("All","RequestName")
+            self.log("INFO","Requesting new substance name.")
+            return
+        elif msgType == "NewSubstanceName":
+            substanceName = payload.get("name") or payload.get("substance")
+            try:
+                self.newSubstance(substanceName)
+            except Exception as exc:
+                self.log("ERROR",f"Failed to start new substance acquisition: {exc}")
+                self.sendMessage(
+                    "All",
+                    "NewReferenceCapture",
+                    {
+                        "status": "error",
+                        "substance": (substanceName or "").strip(),
+                        "message": str(exc)
+                    }
+                )
+            return
+        elif msgType == "Analyze":
             if not self.calibrationInProgress:
                 self.sendMessage("All","AnalysisRequested",{"status": "received"})
                 if self.referenceSpectra is None:
@@ -113,6 +140,106 @@ class Analysis(Module):
             else:
                 worker = Thread(target=self.performAnalysis,args=(imageData,))
             worker.start()
+
+    def _handleNewSubstanceCapture(self,payload):
+        """
+        Processes a captured image when registering a new substance reference.
+        """
+        if not payload:
+            return
+
+        with self._newSubstanceLock:
+            state = self._newSubstanceState
+            if state is None:
+                return
+            if state.get("status") == "processing":
+                self.log("WARNING","Ignoring additional camera frame while new substance processing is ongoing.")
+                return
+            self._newSubstanceState["status"] = "processing"
+            substanceName = state.get("substance")
+
+        try:
+            imageB64 = payload.get("image")
+            if not imageB64:
+                raise ValueError("Camera response did not include image data.")
+
+            imageBytes = base64.b64decode(imageB64)
+            imageNp = numpy.frombuffer(imageBytes,dtype=numpy.uint8)
+            imageData = cv2.imdecode(imageNp,cv2.IMREAD_COLOR)
+            if imageData is None:
+                raise ValueError("Failed to decode image data for new substance acquisition.")
+
+            intensityProfile = numpy.asarray(self.extractSpectrogramProfile(imageData),dtype=numpy.float32)
+            if intensityProfile.size == 0:
+                raise ValueError("Extracted intensity profile is empty.")
+
+            baseProfile = self._get_resampled_base_profile(intensityProfile.size)
+            diffProfile = baseProfile - intensityProfile
+            if diffProfile.size == 0:
+                raise ValueError("Difference profile is empty.")
+
+            peakIdx = int(numpy.argmax(diffProfile))
+            peakValue = float(diffProfile[peakIdx])
+
+            pixelToNmFactor = self.config.get("pixel_to_nm_factor",0.5)
+            pixelOffset = self.config.get("pixel_to_nm_offset",400.0)
+            wavelengthNm = peakIdx * pixelToNmFactor + pixelOffset
+
+            entry = {
+                "wavelength": f"{wavelengthNm:.2f}",
+                "substance": substanceName,
+                "ion_state": self.config.get("default_ion_state",""),
+                "intensity": f"{peakValue:.4f}",
+                "source": self.config.get("reference_source","Raspiscope")
+            }
+
+            self._store_reference_peak(wavelengthNm,entry)
+
+            self.sendMessage(
+                "All",
+                "NewReferenceCapture",
+                {
+                    "status": "completed",
+                    "substance": substanceName,
+                    "wavelength_nm": float(wavelengthNm),
+                    "intensity": peakValue
+                }
+            )
+            self.log("INFO",f"New reference '{substanceName}' stored at {wavelengthNm:.2f} nm (intensity delta {peakValue:.3f}).")
+        except Exception as exc:
+            self.log("ERROR",f"Failed to register new substance '{substanceName}': {exc}")
+            self.sendMessage("All","NewReferenceCapture",{"status": "error","substance": substanceName,"message": str(exc)})
+        finally:
+            with self._newSubstanceLock:
+                self._newSubstanceState = None
+
+    def newSubstance(self,substanceName):
+        """
+        Requests a new camera capture and stores the main absorption peak
+        for the provided substance in the reference spectra database.
+        """
+        if self.calibrationInProgress:
+            raise RuntimeError("Cannot register new substances while calibration is in progress.")
+
+        substance = (substanceName or "").strip()
+        if not substance:
+            raise ValueError("Substance name must be provided.")
+
+        if self.baseIntensityProfile is None:
+            raise RuntimeError("Base intensity profile not available. Run calibration first.")
+
+        with self._newSubstanceLock:
+            if self._newSubstanceState is not None:
+                raise RuntimeError("Another new substance acquisition is already in progress.")
+            self._newSubstanceState = {
+                "substance": substance,
+                "status": "waiting_image",
+                "created_at": time.time()
+            }
+
+        self.log("INFO",f"Requesting camera capture for new substance '{substance}'.")
+        self.sendMessage("Camera","Take")
+        self.sendMessage("All","NewReferenceCapture",{"status": "requested","substance": substance})
 
     def calibrate(self):
         """
@@ -221,7 +348,7 @@ class Analysis(Module):
         """
         height,width = imageData.shape[:2]
 
-        manualRect = (110,720,300,10)
+        manualRect = (15,550,310,10)
         x,y,w,h = manualRect
         xStart = max(0,int(x))
         yStart = max(0,int(y))
@@ -252,6 +379,24 @@ class Analysis(Module):
         intensityProfile = numpy.mean(roiGray,axis=0)
         
         return intensityProfile
+
+    def _get_resampled_base_profile(self,targetLength):
+        """
+        Returns the base intensity profile, resampled to the desired length if necessary.
+        """
+        if self.baseIntensityProfile is None:
+            raise RuntimeError("Base intensity profile is not available.")
+
+        baseArray = numpy.asarray(self.baseIntensityProfile,dtype=numpy.float32)
+        if baseArray.size == 0:
+            raise RuntimeError("Base intensity profile is empty.")
+
+        if baseArray.size == targetLength:
+            return baseArray
+
+        xBase = numpy.linspace(0.0,1.0,num=baseArray.size,endpoint=True)
+        xTarget = numpy.linspace(0.0,1.0,num=targetLength,endpoint=True)
+        return numpy.interp(xTarget,xBase,baseArray)
 
     def detectAbsorbanceValleys(self,intensityProfile):
         """
@@ -310,6 +455,30 @@ class Analysis(Module):
         )
         
         return peaksIndices
+
+    def _store_reference_peak(self,wavelength,entry):
+        """
+        Appends the provided entry to the reference spectra CSV and updates the in-memory cache.
+        """
+        fieldnames = ["wavelength","substance","ion_state","intensity","source"]
+        filePath = self.referenceSpectraPath
+        directory = os.path.dirname(filePath)
+        if directory:
+            os.makedirs(directory,exist_ok=True)
+
+        needsHeader = not os.path.exists(filePath) or os.path.getsize(filePath) == 0
+
+        with self._referenceLock:
+            with open(filePath,"a",newline='') as csvFile:
+                writer = csv.DictWriter(csvFile,fieldnames=fieldnames)
+                if needsHeader:
+                    writer.writeheader()
+                writer.writerow(entry)
+
+            if self.referenceSpectra is None:
+                self.referenceSpectra = []
+            self.referenceSpectra.append((float(wavelength),dict(entry)))
+            self.referenceSpectra.sort(key=lambda item: item[0])
 
     def compareWithReferences(self,peaksIndices,intensityProfile):
         """

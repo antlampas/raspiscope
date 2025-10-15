@@ -28,7 +28,7 @@ class CuvetteSensor(Module):
         self.sensor            = None
         self.pollInterval      = self.config.get('poll_interval_s', 1.0)
         self.isPresent         = False
-
+        self.mode              = "Analysis"
     def onStart(self):
         """
         Initializes the sensor.
@@ -59,10 +59,34 @@ class CuvetteSensor(Module):
             if currentState != previousState:
                 self.isPresent = currentState
                 if self.isPresent:
-                    self.sendMessage("Camera","CuvettePresent")
-                    self.log("INFO","Cuvette detected.")
+                    if self.mode == "Analysis":
+                        self.sendMessage("Camera","CuvettePresent")
+                        self.log("INFO","Cuvette detected.")
+                    elif self.mode == "AddSubstance":
+                        self.sendMessage("Analysis","AddSubstance")
+                        self.log("INFO","Add Substance requested.")
                 else:
-                    self.sendMessage("Camera","CuvetteAbsent")
+                    if self.mode == "Analysis":
+                        self.sendMessage("Camera","CuvetteAbsent")
+                    elif self.mode == "AddSubstance":
+                        self.sendMessage("Analysis","CuvetteAbsent")
                     self.log("INFO","Cuvette absent.")
                 previousState = currentState
             time.sleep(self.pollInterval)
+    
+    def handleMessage(self,message):
+        """
+        Handles incoming messages.
+        """
+        msgType = message.get("Message",{}).get("type")
+
+        if msgType == "Analysis":
+            self.log("INFO","Received 'Analysis' signal. Switch to Analysis mode.")
+            self.mode = "Analysis"
+            self.sendMessage("All","ModeChanged",{"mode": self.mode})
+            self.log("INFO","Switched to Analysis mode.")
+        if msgType == "AddSubstance":
+            self.log("INFO","Received 'AddSubstance' signal. Switch to AddSubstance mode.")
+            self.mode = "AddSubstance"
+            self.sendMessage("All","ModeChanged",{"mode": self.mode})
+            self.log("INFO","Switched to AddSubstance mode.")

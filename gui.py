@@ -16,6 +16,9 @@ from kivy.core.image import Image as CoreImage
 from kivy.logger import Logger
 from kivy.properties import ObjectProperty
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.popup import Popup
+from kivy.uix.textinput import TextInput
 
 from matplotlib.figure import Figure
 from matplotlib.backend_bases import TimerBase
@@ -72,7 +75,7 @@ class SpectrogramGraph(BoxLayout):
 
     def _configure_axes(self) -> None:
         self._axes.set_xlabel("Frequenza (THz)")
-        self._axes.set_ylabel("Intensità")
+        self._axes.set_ylabel("Intensity")
         self._axes.set_title("Spettrogramma")
         self._axes.grid(True, alpha=0.2)
 
@@ -90,7 +93,7 @@ class SpectrogramGraph(BoxLayout):
         self._axes.text(
             0.5,
             0.5,
-            "Nessun dato",
+            "No data",
             ha="center",
             va="center",
             transform=self._axes.transAxes,
@@ -232,15 +235,15 @@ class MainLayout(BoxLayout):
         if substances:
             text = ", ".join(str(item) for item in substances if item)
             if text:
-                self.substances_label.text = f"Sostanze riconosciute: {text}"
+                self.substances_label.text = f"Identified substances: {text}"
                 return
-        self.substances_label.text = "Sostanze riconosciute: nessuna"
+        self.substances_label.text = "Identified substances: none"
 
     def show_analysis_error(self, message: str) -> None:
         self._ensure_references()
         if self.substances_label is None:
             return
-        self.substances_label.text = f"Errore analisi: {message}"
+        self.substances_label.text = f"Analysis error: {message}"
 
     def append_cli_output(self, text: str) -> None:
         self._ensure_references()
@@ -285,10 +288,10 @@ class MainLayout(BoxLayout):
             try:
                 response = app.process_cli_command(command)
             except Exception as exc:  # pragma: no cover
-                Logger.warning(f"GUI: errore nell'esecuzione del comando '{command}': {exc}")
-                response = f"Errore durante l'esecuzione del comando: {exc}"
+                Logger.warning(f"GUI: error while executing command '{command}': {exc}")
+                response = f"Error while executing the command: {exc}"
         else:
-            response = "Applicazione non pronta per eseguire comandi."
+            response = "Application not ready to execute commands."
         if response:
             self.append_cli_output(response)
         Clock.schedule_once(lambda _dt: self._focus_cli_input(), 0)
@@ -309,6 +312,8 @@ class GUI(Module, App):
         self._message_thread: Optional[Thread] = None
         self._stop_observer = None
         self.main_layout: Optional[MainLayout] = None
+        self._name_popup: Optional[Popup] = None
+        self._name_input: Optional[TextInput] = None
 
     def build(self):
         self.main_layout = MainLayout()
@@ -360,22 +365,25 @@ class GUI(Module, App):
     def process_cli_command(self, command: str) -> str:
         normalized = (command or "").strip()
         if not normalized:
-            return "Nessun comando inserito."
+            return "No command entered."
         key = normalized.replace(" ", "").lower()
         if key in {"help", "?"}:
-            return "Comandi disponibili: takePicture, analyze, CalibrateCamera, CalibrateAnalysis, lightOn, lightOff"
+            return "Available commands: takePicture, analyze, calibrateCamera, calibrateAnalysis, lightOn, lightOff, cuvetteAnalysis, cuvetteAddSubstance, cuvetteAdd"
         commands = {
-            "analyze": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
-            "analysis": ("Camera", "Analyze", "Richiesta di analisi inviata al modulo camera."),
-            "calibratecamera": ("Camera", "Calibrate", "Calibrazione della camera avviata."),
-            "calibrateanalysis": ("Analysis", "Calibrate", "Calibrazione del modulo Analysis avviata."),
-            "takepicture": ("Camera", "Take", "Richiesta di acquisizione immagine"),
-            "lighton": ("LightSource", "TurnOn", "Sorgente luminosa accesa."),
-            "lightoff": ("LightSource", "TurnOff", "Sorgente luminosa spenta."),
+            "analyze": ("Camera", "Analyze", "Analysis request sent to the camera module."),
+            "analysis": ("Camera", "Analyze", "Analysis request sent to the camera module."),
+            "calibratecamera": ("Camera", "Calibrate", "Camera calibration started."),
+            "calibrateanalysis": ("Analysis", "Calibrate", "Analysis module calibration started."),
+            "takepicture": ("Camera", "Take", "Image capture requested."),
+            "lighton": ("LightSource", "TurnOn", "Light source turned on."),
+            "lightoff": ("LightSource", "TurnOff", "Light source turned off."),
+            "cuvetteanalysis": ("CuvetteSensor", "Analysis", "CuvetteSensor set to Analysis mode."),
+            "cuvetteaddsubstance": ("CuvetteSensor", "AddSubstance", "CuvetteSensor set to AddSubstance mode."),
+            "cuvetteadd": ("CuvetteSensor", "AddSubstance", "CuvetteSensor set to AddSubstance mode."),
         }
         action = commands.get(key)
         if action is None:
-            return f"Comando sconosciuto: {command}"
+            return f"Unknown command: {command}"
         destination, message_type, feedback = action
         self.sendMessage(destination, message_type)
         return feedback
@@ -393,19 +401,19 @@ class GUI(Module, App):
                 except (ValueError, TypeError) as exc:
                     self.log("ERROR", f"Failed to decode image: {exc}")
                     Clock.schedule_once(
-                        lambda _dt, text=f"Errore nel decodificare l'immagine: {exc}": self._append_cli_text(text),
+                        lambda _dt, text=f"Error decoding the image: {exc}": self._append_cli_text(text),
                         0,
                     )
                 else:
                     self.log("INFO", "Updating image")
                     Clock.schedule_once(lambda _dt, data=image_bytes: self._update_image(data))
                     Clock.schedule_once(
-                        lambda _dt: self._append_cli_text("Immagine acquisita dal modulo camera."),
+                        lambda _dt: self._append_cli_text("Image captured by the camera module."),
                         0,
                     )
             else:
                 Clock.schedule_once(
-                    lambda _dt: self._append_cli_text("Nessuna immagine fornita dal modulo camera."),
+                    lambda _dt: self._append_cli_text("No image provided by the camera module."),
                     0,
                 )
         elif msg_type == "AnalysisComplete":
@@ -422,39 +430,41 @@ class GUI(Module, App):
                 lambda _dt, data=spectrogram, labels=substances: self._apply_analysis_results(data, labels)
             )
             summary_items = [str(item) for item in substances if item]
-            summary = ", ".join(summary_items) if summary_items else "nessuna sostanza rilevata"
+            summary = ", ".join(summary_items) if summary_items else "no substances detected"
             Clock.schedule_once(
-                lambda _dt, text=f"Analisi completata: {summary}": self._append_cli_text(text),
+                lambda _dt, text=f"Analysis complete: {summary}": self._append_cli_text(text),
                 0,
             )
         elif msg_type == "AnalysisError":
-            error_message = payload.get("message") or payload.get("error") or "Errore sconosciuto"
+            error_message = payload.get("message") or payload.get("error") or "Unknown error"
             self.log("ERROR", error_message)
             Clock.schedule_once(lambda _dt, text=error_message: self._handle_analysis_error(text))
             Clock.schedule_once(
-                lambda _dt, text=f"Errore analisi: {error_message}": self._append_cli_text(text),
+                lambda _dt, text=f"Analysis error: {error_message}": self._append_cli_text(text),
                 0,
             )
         elif msg_type == "AnalysisCalibration":
             status = (payload or {}).get("status", "").lower()
             if status == "started":
-                feedback = "Calibrazione Analysis avviata."
+                feedback = "Analysis calibration started."
                 self.log("INFO", feedback)
             elif status == "completed":
-                feedback = "Calibrazione Analysis completata."
+                feedback = "Analysis calibration completed."
                 self.log("INFO", feedback)
             elif status == "error":
-                message = payload.get("message") or "Errore durante la calibrazione Analysis."
-                feedback = f"Calibrazione Analysis fallita: {message}"
+                message = payload.get("message") or "Error during Analysis calibration."
+                feedback = f"Analysis calibration failed: {message}"
                 self.log("ERROR", feedback)
             else:
-                feedback = f"Aggiornamento calibrazione Analysis: {payload}"
+                feedback = f"Analysis calibration update: {payload}"
                 self.log("INFO", feedback)
             Clock.schedule_once(lambda _dt, text=feedback: self._append_cli_text(text), 0)
         elif msg_type == "CameraError":
-            error_message = payload.get("message") or payload.get("error") or "Errore sconosciuto dalla camera"
+            error_message = payload.get("message") or payload.get("error") or "Unknown camera error"
             self.log("ERROR", f"Camera error: {error_message}")
             Clock.schedule_once(lambda _dt, text=error_message: self._append_cli_text(text), 0)
+        elif msg_type == "RequestName":
+            Clock.schedule_once(lambda _dt: self._show_substance_name_popup(), 0)
 
     def _update_image(self, image_bytes: bytes) -> None:
         if self.main_layout is None:
@@ -473,3 +483,45 @@ class GUI(Module, App):
         if self.main_layout is None:
             return
         self.main_layout.show_analysis_error(message)
+
+    def _show_substance_name_popup(self) -> None:
+        if self._name_popup is not None:
+            if self._name_popup.parent is None:
+                self._name_popup.open()
+            if self._name_input is not None:
+                Clock.schedule_once(lambda _dt: setattr(self._name_input, "focus", True), 0)
+            return
+
+        layout = BoxLayout(orientation="vertical", spacing=10, padding=15)
+        prompt = Label(text="Enter the substance name:", halign="center")
+        prompt.bind(size=lambda _instance, _value: setattr(prompt, "text_size", prompt.size))
+        name_input = TextInput(multiline=False)
+
+        layout.add_widget(prompt)
+        layout.add_widget(name_input)
+
+        popup = Popup(
+            title="New Substance",
+            content=layout,
+            size_hint=(0.5, 0.3),
+            auto_dismiss=True,
+        )
+
+        def submit_name(_instance):
+            name = (name_input.text or "").strip()
+            if name:
+                self.sendMessage("Analysis", "newSubstanceName", {"name": name})
+                popup.dismiss()
+
+        name_input.bind(on_text_validate=submit_name)
+        popup.bind(on_dismiss=lambda *_args: self._cleanup_name_popup())
+
+        self._name_popup = popup
+        self._name_input = name_input
+
+        popup.open()
+        Clock.schedule_once(lambda _dt: setattr(name_input, "focus", True), 0)
+
+    def _cleanup_name_popup(self) -> None:
+        self._name_popup = None
+        self._name_input = None

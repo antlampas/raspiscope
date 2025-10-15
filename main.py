@@ -60,7 +60,7 @@ def main():
             process.start()
             
             running_processes.append({'name': name, 'process': process})
-            time.sleep(0.001)
+            time.sleep(0.01)
 
 
     # Run GUI in the main process if it's enabled

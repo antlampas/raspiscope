@@ -35,7 +35,7 @@
         valign: "middle"
         color: 1, 1, 1, 1
         font_size: "16sp"
-        text: "Sostanze riconosciute: nessuna"
+        text: "Identified substances: none"
 
 <CliPane@BoxLayout>:
     orientation: "vertical"
@@ -68,7 +68,7 @@
         height: dp(40)
         multiline: False
         write_tab: False
-        hint_text: "Comandi: takePicture, analyze, CalibrateCamera, CalibrateCuvette, lightOn, lightOff"
+        hint_text: "Commands: takePicture, analyze, CalibrateCamera, CalibrateAnalysis, lightOn, lightOff, cuvetteAnalysis, cuvetteAddSubstance, cuvetteAdd"
         on_text_validate: app.root.submit_cli_command(self.text)
 
 <MainLayout@BoxLayout>:

@@ -11,7 +11,7 @@
 - **Unit Tests:** Located in `tests/unit/`. Each module has a corresponding test file. Run all tests with:
   ```python -m unittest discover tests/unit```
   Or run individual tests as in CI (`.github/workflows/unitTests.yml`).
-- **Dependencies:** `apt install libcap-dev python3-dev qtbase5-dev python3-libcamera` `pip install -r requirements.txt`
+- **Dependencies:** `apt install libcap-dev python3-dev qtbase5-dev python3-libcamera python3-kms++` `pip install -r requirements.txt`
 - **Debugging:** Each module logs via the Logger module. Use log messages for tracing inter-module communication and errors.
 - **Configuration Changes:** Edit `config.json` to enable/disable modules or change hardware/network settings. Restart the app to apply changes.
 
@@ -47,54 +47,53 @@
 ---
 _If any section is unclear or missing, please provide feedback for further refinement._
 
-ITALIANO
+ITALIAN (Translated to English)
 
-## Architettura del Progetto
-- **Design modulare:** Ogni funzione hardware/software (es. fotocamera, sorgente luminosa, sensore della cuvetta, analisi, logger, GUI) è implementata come classe modulo separata (vedi `camera.py`, `lightSource.py`, ecc.), che eredita dalla classe base astratta `Module` (`module.py`).
-- **EventManager:** L’orchestratore centrale (`eventManager.py`) viene eseguito come processo, instrada i messaggi tra i moduli e gestisce il ciclo di vita (registrazione, arresto, ecc.).
-- **Comunicazione inter‑processo:** I moduli comunicano tramite code di messaggi gestite dalla classe `Communicator`. I messaggi sono dizionari con `Sender`, `Destination` e `Message` (che contiene `type` e `payload`).
-- **Configurazione:** Tutta la configurazione a runtime è caricata da `config.json` tramite `ConfigLoader`. L’abilitazione dei moduli, i parametri hardware e le impostazioni di rete sono definiti qui.
-- **Avvio:** `main.py` carica la configurazione, avvia i moduli abilitati come processi separati e lancia l’EventManager. L’arresto è coordinato tramite segnali.
+This section retains the structure of the original Italian walkthrough, now rendered in English for consistency.
 
-## Flussi di Lavoro per gli Sviluppatori
-- **Test unitari:** In `tests/unit/`. Ogni modulo ha un file di test corrispondente. Per eseguire tutti i test:
+## Project Architecture
+- **Modular design:** Every hardware or software capability (camera, light source, cuvette sensor, analysis, logger, GUI) lives in its own module class (see `camera.py`, `lightSource.py`, etc.) that subclasses the abstract `Module` base (`module.py`).
+- **EventManager:** The central orchestrator (`eventManager.py`) runs as a standalone process, routes messages among modules, and manages lifecycle events such as registration and shutdown.
+- **Inter-process communication:** Modules talk through message queues handled by the `Communicator` class. Each message is a dictionary with `Sender`, `Destination`, and a `Message` payload containing `type` and `payload`.
+- **Configuration:** Runtime settings come from `config.json` via `ConfigLoader`, covering module enablement, hardware parameters, and networking details.
+- **Startup:** `main.py` loads the configuration, launches enabled modules as separate processes, and starts the EventManager; shutdown is coordinated via signals.
+
+## Developer Workflows
+- **Unit tests:** Located in `tests/unit/`. Each module has a dedicated test file. Run the full suite with:
   ```python -m unittest discover tests/unit```
-  Oppure esegui test singoli come in CI (`.github/workflows/unitTests.yml`).
+  or execute individual tests as configured in CI (`.github/workflows/unitTests.yml`).
+- **Dependencies:** `apt install libcap-dev python3-dev qtbase5-dev python3-libcamera` `pip install -r requirements.txt`
+- **Debugging:** Every module emits logs through the Logger module. Use those messages to trace inter-module communication and diagnose issues.
+- **Configuration changes:** Edit `config.json` to toggle modules or tweak hardware/network settings. Restart the app to apply updates.
 
-- **Dipendenze:** `apt install libcap-dev python3-dev qtbase5-dev python3-libcamera` `pip install -r requirements.txt`
+## Patterns & Conventions
+- **Message routing:** All inter-module communication leverages the message queue pattern; always call `sendMessage(destination, msgType, payload)` from `Module`.
+- **Lifecycle hooks:** Modules override `onStart`, `mainLoop`, `handleMessage`, and `onStop` to provide their behaviour.
+- **Registration:** Modules register with the EventManager at startup by sending a `Register` message.
+- **Logging:** Prefer `log(level, message)` to forward logs to the Logger module; avoid `print` except during startup/shutdown.
+- **Threading:** Each module owns a communication thread, while its main logic runs in a separate process.
 
-- **Debug:** Ogni modulo effettua logging tramite il modulo Logger. Usa i messaggi di log per tracciare la comunicazione inter‑modulo e gli errori.
+## Integration Points
+- **Kivy GUI:** The GUI module (`gui.py`, `gui.kv`) builds the user interface with Kivy and communicates through the same messaging system.
+- **Hardware:** GPIO, camera, and sensor modules rely on hardware-specific libraries (see `requirements.txt`).
+- **Diagrams:** Architecture and activity diagrams are stored in `diagrams/`.
 
-- **Modifiche di configurazione:** Modifica `config.json` per abilitare/disabilitare moduli o cambiare impostazioni hardware/rete. Riavvia l’app per applicare le modifiche.
-
-## Pattern e Convenzioni
-- **Instradamento dei messaggi:** Tutta la comunicazione tra moduli utilizza il pattern delle code di messaggi. Usa sempre `sendMessage(destination, msgType, payload)` dalla classe `Module`.
-- **Hook di ciclo di vita:** I moduli sovrascrivono `onStart`, `mainLoop`, `handleMessage` e `onStop` per la logica personalizzata.
-- **Registrazione:** I moduli si registrano con l’EventManager all’avvio inviando un messaggio `Register`.
-- **Logging:** Usa il metodo `log(level, message)` per inviare log al modulo Logger. Evita `print`, tranne che per avvio/arresto.
-- **Threading:** Ogni modulo esegue un proprio thread per la comunicazione. La logica principale gira in un processo separato.
-
-## Punti di Integrazione
-- **GUI Kivy:** Il modulo GUI (`gui.py`, `gui.kv`) usa Kivy per l’interfaccia utente. È avviato come modulo e comunica tramite lo stesso sistema di messaggistica.
-- **Hardware:** I moduli GPIO, fotocamera e sensori usano librerie specifiche all’hardware (vedi `requirements.txt`).
-- **Diagrammi:** I diagrammi di architettura e delle attività si trovano in `diagrams/`.
-
-## Esempi
-- **Aggiungere un nuovo modulo:** eredita da `Module`, implementa i metodi del ciclo di vita e aggiorna `main.py` e `config.json`.
-- **Inviare un messaggio da un modulo:**
+## Examples
+- **Adding a new module:** Subclass `Module`, implement the lifecycle methods, and update both `main.py` and `config.json`.
+- **Sending a message from a module:**
   ```python
   self.sendMessage("EventManager", "Register")
-  self.sendMessage("Logger", "LogMessage", {"level": "INFO", "message": "Avviato"})
+  self.sendMessage("Logger", "LogMessage", {"level": "INFO", "message": "Started"})
   ```
 
-## File Chiave
-- `main.py`: Avvio e orchestrazione dei processi
-- `module.py`: Classe base per tutti i moduli
-- `eventManager.py`: Router centrale dei messaggi
-- `config.json`: Configurazione di moduli e sistema
-- `requirements.txt`: Dipendenze Python
-- `tests/unit/`: Test unitari per ogni modulo
-- `diagrams/`: Diagrammi architetturali
+## Key Files
+- `main.py`: Startup and process orchestration
+- `module.py`: Base class for every module
+- `eventManager.py`: Central message router
+- `config.json`: Module and system configuration
+- `requirements.txt`: Python dependencies
+- `tests/unit/`: Unit tests for each module
+- `diagrams/`: Architecture diagrams
 
 ---
-_Se qualche sezione risulta poco chiara o mancante, lascia un commento per ulteriori miglioramenti._
+_If any section still feels unclear or incomplete, please leave a comment so we can improve it further._
