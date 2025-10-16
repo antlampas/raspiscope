@@ -8,4 +8,5 @@ picamera2
 rpi_ws281x
 scipy
 setuptools
+six
 websockets
