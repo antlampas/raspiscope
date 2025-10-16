@@ -368,7 +368,7 @@ class GUI(Module, App):
             return "No command entered."
         key = normalized.replace(" ", "").lower()
         if key in {"help", "?"}:
-            return "Available commands: takePicture, analyze, calibrateCamera, calibrateAnalysis, lightOn, lightOff, cuvetteAnalysis, cuvetteAddSubstance, cuvetteAdd"
+            return "Available commands: takePicture, analyze, calibrateCamera, calibrateAnalysis, lightOn, lightOff, analysisMode, addSubstance"
         commands = {
             "analyze": ("Camera", "Analyze", "Analysis request sent to the camera module."),
             "analysis": ("Camera", "Analyze", "Analysis request sent to the camera module."),
@@ -378,14 +378,14 @@ class GUI(Module, App):
             "lighton": ("LightSource", "TurnOn", "Light source turned on."),
             "lightoff": ("LightSource", "TurnOff", "Light source turned off."),
             "cuvetteanalysis": ("CuvetteSensor", "Analysis", "CuvetteSensor set to Analysis mode."),
-            "cuvetteaddsubstance": ("CuvetteSensor", "AddSubstance", "CuvetteSensor set to AddSubstance mode."),
-            "cuvetteadd": ("CuvetteSensor", "AddSubstance", "CuvetteSensor set to AddSubstance mode."),
+            "addsubstance": ("CuvetteSensor", "AddSubstance", "CuvetteSensor set to AddSubstance mode."),
         }
         action = commands.get(key)
         if action is None:
             return f"Unknown command: {command}"
         destination, message_type, feedback = action
         self.sendMessage(destination, message_type)
+        self.log("INFO", feedback)
         return feedback
 
     def handleMessage(self, message):
@@ -510,7 +510,7 @@ class GUI(Module, App):
         def submit_name(_instance):
             name = (name_input.text or "").strip()
             if name:
-                self.sendMessage("Analysis", "newSubstanceName", {"name": name})
+                self.sendMessage("Analysis", "NewSubstanceName", {"name": name})
                 popup.dismiss()
 
         name_input.bind(on_text_validate=submit_name)
