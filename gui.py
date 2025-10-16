@@ -377,7 +377,7 @@ class GUI(Module, App):
             "takepicture": ("Camera", "Take", "Image capture requested."),
             "lighton": ("LightSource", "TurnOn", "Light source turned on."),
             "lightoff": ("LightSource", "TurnOff", "Light source turned off."),
-            "cuvetteanalysis": ("CuvetteSensor", "Analysis", "CuvetteSensor set to Analysis mode."),
+            "analysismode": ("CuvetteSensor", "Analysis", "CuvetteSensor set to Analysis mode."),
             "addsubstance": ("CuvetteSensor", "AddSubstance", "CuvetteSensor set to AddSubstance mode."),
         }
         action = commands.get(key)

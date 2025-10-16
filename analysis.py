@@ -466,10 +466,27 @@ class Analysis(Module):
         if directory:
             os.makedirs(directory,exist_ok=True)
 
-        needsHeader = not os.path.exists(filePath) or os.path.getsize(filePath) == 0
-
         with self._referenceLock:
+            try:
+                needsHeader = not os.path.exists(filePath) or os.path.getsize(filePath) == 0
+            except OSError:
+                needsHeader = True
+
+            appendNewline = False
+            if not needsHeader:
+                try:
+                    with open(filePath,"rb") as existingFile:
+                        existingFile.seek(0,os.SEEK_END)
+                        if existingFile.tell() > 0:
+                            existingFile.seek(-1,os.SEEK_END)
+                            lastByte = existingFile.read(1)
+                            appendNewline = lastByte not in (b"\n",b"\r")
+                except OSError:
+                    appendNewline = False
+
             with open(filePath,"a",newline='') as csvFile:
+                if appendNewline:
+                    csvFile.write("\n")
                 writer = csv.DictWriter(csvFile,fieldnames=fieldnames)
                 if needsHeader:
                     writer.writeheader()
