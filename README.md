@@ -1,4 +1,6 @@
 # Raspiscope Python Application
+## Downlod the 3D files for FreeCAD Software.
+[click here](https://github.com/antlampas/raspiscope-spectroscope)
 
 ## Project Architecture
 - **Modular Design:** Each hardware/software function (e.g., camera, light source, cuvette sensor, analysis, logger, GUI) is implemented as a separate module class (see `camera.py`, `lightSource.py`, etc.), inheriting from the abstract `Module` base class (`module.py`).
