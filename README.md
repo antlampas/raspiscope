@@ -1,6 +1,5 @@
 # Raspiscope Python Application
-## Downlod the 3D files for your 3D printer
-
+## Downlod the 3D files for FreeCAD Software.
 [click here](https://github.com/antlampas/raspiscope-spectroscope)
 
 ## Project Architecture
