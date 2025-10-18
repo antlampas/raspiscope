@@ -105,9 +105,9 @@ class Camera(Module):
             self.log("INFO","Taking picture...")
             # Capture the image as a numpy array
             self.sendMessage("LightSource","TurnOn")
-            time.sleep(0.001)
+            time.sleep(0.1)
             imageArray = self.camera.capture_array()
-            time.sleep(0.001)
+            time.sleep(0.1)
             self.sendMessage("LightSource","TurnOff")
 
             # Encode the image in JPG format and then in Base64
