@@ -36,6 +36,12 @@
       "enabled": true,
       "reference_spectra_path": "data/reference_spectra.csv",
       "tolerance_nm": 10,
+      "manual_rect": [
+        80,
+        600,
+        300,
+        10
+      ],
       "base_intensity_profile": [
         59.9,
         61.3,
