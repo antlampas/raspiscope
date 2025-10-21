@@ -10,7 +10,6 @@ import csv
 import time
 import base64
 import json
-import math
 import os
 from scipy.signal import find_peaks
 from threading    import Thread, Lock
@@ -35,6 +34,12 @@ class Analysis(Module):
         self._newSubstanceLock     = Lock()
         self._newSubstanceState    = None
         self._referenceLock        = Lock()
+        tolerance = self.config.get("profile_match_tolerance",0.20)
+        try:
+            tolerance = float(tolerance)
+        except (TypeError,ValueError):
+            tolerance = 0.05
+        self.profileMatchTolerance = max(0.0,tolerance)
 
     def onStart(self):
         """
@@ -46,24 +51,47 @@ class Analysis(Module):
             with open(self.referenceSpectraPath,newline='') as csvfile:
                 reader = csv.DictReader(csvfile)
                 spectra = []
-                for row in reader:
+                for rowNumber,row in enumerate(reader,start=1):
                     if not row:
                         continue
-                    wavelengthRaw = row.get('wavelength')
-                    if wavelengthRaw is None:
-                        continue
-                    try:
-                        wavelength = float(wavelengthRaw)
-                    except (TypeError,ValueError):
-                        continue
-                    spectra.append((wavelength,dict(row)))
 
+                    rawSpectrum = row.get("spectrum_values") or row.get("spectrum")
+                    if not rawSpectrum:
+                        # Fallback for legacy files containing single peak data.
+                        wavelengthRaw = row.get("wavelength")
+                        if wavelengthRaw is not None:
+                            self.log(
+                                "WARNING",
+                                f"Legacy reference entry detected at line {rowNumber}; skipping because full spectrum data is required."
+                            )
+                        continue
+
+                    spectrumArray = self._parse_reference_spectrum(rawSpectrum)
+                    if spectrumArray is None or spectrumArray.size == 0:
+                        self.log("WARNING",f"Reference entry at line {rowNumber} discarded: spectrum data is empty or invalid.")
+                        continue
+
+                    spectra.append({
+                        "substance"            : row.get("substance","Unknown"),
+                        "ion_state"            : row.get("ion_state",""),
+                        "source"               : row.get("source",""),
+                        "captured_at"          : row.get("captured_at",""),
+                        "pixel_to_nm_factor"   : self._safe_float(row.get("pixel_to_nm_factor"),default=self.config.get("pixel_to_nm_factor")),
+                        "pixel_to_nm_offset"   : self._safe_float(row.get("pixel_to_nm_offset"),default=self.config.get("pixel_to_nm_offset")),
+                        "spectrum"             : spectrumArray
+                    })
+
+                self.referenceSpectra = spectra
                 if not spectra:
-                    self.referenceSpectra = []
-                    self.log("WARNING", f"Reference spectra file '{self.referenceSpectraPath}' is empty. Analysis will run without reference matches until data is added.")
+                    self.log(
+                        "WARNING",
+                        f"Reference spectra file '{self.referenceSpectraPath}' is empty. Analysis will run without reference matches until data is added."
+                    )
                 else:
-                    self.referenceSpectra = sorted(spectra,key=lambda item: item[0])
-                    self.log("INFO", f"Reference spectra loaded successfully from {self.referenceSpectraPath} ({len(self.referenceSpectra)} entries).")
+                    self.log(
+                        "INFO",
+                        f"Reference spectra loaded successfully from {self.referenceSpectraPath} ({len(self.referenceSpectra)} entries)."
+                    )
         except FileNotFoundError:
             self.log("ERROR", f"Reference file not found at {self.referenceSpectraPath}. Analysis module will not work correctly.")
         except Exception as e:
@@ -173,27 +201,23 @@ class Analysis(Module):
             if intensityProfile.size == 0:
                 raise ValueError("Extracted intensity profile is empty.")
 
-            baseProfile = self._get_resampled_base_profile(intensityProfile.size)
-            diffProfile = baseProfile - intensityProfile
-            if diffProfile.size == 0:
-                raise ValueError("Difference profile is empty.")
-
-            peakIdx = int(numpy.argmax(diffProfile))
-            peakValue = float(diffProfile[peakIdx])
-
             pixelToNmFactor = self.config.get("pixel_to_nm_factor",0.5)
             pixelOffset = self.config.get("pixel_to_nm_offset",400.0)
+
+            peakIdx = int(numpy.argmax(intensityProfile))
+            peakValue = float(intensityProfile[peakIdx])
             wavelengthNm = peakIdx * pixelToNmFactor + pixelOffset
 
-            entry = {
-                "wavelength": f"{wavelengthNm:.2f}",
+            metadata = {
                 "substance": substanceName,
                 "ion_state": self.config.get("default_ion_state",""),
-                "intensity": f"{peakValue:.4f}",
-                "source": self.config.get("reference_source","Raspiscope")
+                "source": self.config.get("reference_source","Raspiscope"),
+                "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),
+                "pixel_to_nm_factor": pixelToNmFactor,
+                "pixel_to_nm_offset": pixelOffset
             }
 
-            self._store_reference_peak(wavelengthNm,entry)
+            self._store_reference_spectrum(intensityProfile,metadata)
 
             self.sendMessage(
                 "All",
@@ -202,10 +226,11 @@ class Analysis(Module):
                     "status": "completed",
                     "substance": substanceName,
                     "wavelength_nm": float(wavelengthNm),
-                    "intensity": peakValue
+                    "intensity": peakValue,
+                    "profile_length": int(intensityProfile.size)
                 }
             )
-            self.log("INFO",f"New reference '{substanceName}' stored at {wavelengthNm:.2f} nm (intensity delta {peakValue:.3f}).")
+            self.log("INFO",f"New reference '{substanceName}' stored with peak at {wavelengthNm:.2f} nm (intensity {peakValue:.3f}).")
         except Exception as exc:
             self.log("ERROR",f"Failed to register new substance '{substanceName}': {exc}")
             self.sendMessage("All","NewReferenceCapture",{"status": "error","substance": substanceName,"message": str(exc)})
@@ -322,14 +347,24 @@ class Analysis(Module):
             intensityProfile = numpy.asarray(self.extractSpectrogramProfile(imageData),dtype=numpy.float32)
             if intensityProfile.size == 0:
                 raise ValueError("Empty intensity profile extracted from image.")
-            
-            # Phase 2: Valley Detection (Points of maximum absorbance)
-            peaksIndices = self.detectAbsorbanceValleys(intensityProfile)
-            
-            # Phase 3: Comparison with reference spectra
-            results = self.compareWithReferences(peaksIndices,intensityProfile)
 
-            # Phase 4: Sending results
+            # Phase 2: Comparison with reference spectra using direct profile matching
+            results = self.compareWithReferences(intensityProfile)
+
+            best_match = results.get("best_match")
+            rel_error = best_match.get("relative_error") if isinstance(best_match,dict) else None
+            rel_error_str = f"{float(rel_error):.4f}" if isinstance(rel_error,(int,float)) else "n/a"
+
+            if results.get("match_within_tolerance"):
+                substance = best_match.get("substance","Unknown") if isinstance(best_match,dict) else "Unknown"
+                self.log("INFO",f"Profile matched with '{substance}' (relative error {rel_error_str} <= tolerance {self.profileMatchTolerance:.4f}).")
+            elif best_match:
+                substance = best_match.get("substance","Unknown")
+                self.log("INFO",f"No reference within tolerance {self.profileMatchTolerance:.4f}. Best candidate '{substance}' has relative error {rel_error_str}.")
+            else:
+                self.log("INFO","No reference spectra available for comparison.")
+
+            # Phase 3: Sending results
             self.sendAnalysisResults(results)
 
         except Exception as e:
@@ -380,6 +415,50 @@ class Analysis(Module):
         
         return intensityProfile
 
+    def _parse_reference_spectrum(self,rawSpectrum):
+        """
+        Converts a serialized spectrum payload into a numpy array.
+        """
+        if rawSpectrum is None:
+            return None
+
+        spectrumArray = None
+        try:
+            loaded = json.loads(rawSpectrum)
+            if isinstance(loaded,list):
+                spectrumArray = numpy.asarray([float(item) for item in loaded],dtype=numpy.float32)
+        except (json.JSONDecodeError,TypeError,ValueError):
+            spectrumArray = None
+
+        if spectrumArray is None:
+            values = []
+            for token in str(rawSpectrum).replace(";", " ").split():
+                try:
+                    values.append(float(token))
+                except (TypeError,ValueError):
+                    continue
+            if values:
+                spectrumArray = numpy.asarray(values,dtype=numpy.float32)
+
+        return spectrumArray
+
+    @staticmethod
+    def _safe_float(value,default=None):
+        """
+        Attempts to convert a value to float, returning default on failure.
+        """
+        if value is None:
+            return default
+        if isinstance(value,(int,float)):
+            return float(value)
+        valueStr = str(value).strip()
+        if valueStr == "":
+            return default
+        try:
+            return float(valueStr)
+        except ValueError:
+            return default
+
     def _get_resampled_base_profile(self,targetLength):
         """
         Returns the base intensity profile, resampled to the desired length if necessary.
@@ -398,7 +477,74 @@ class Analysis(Module):
         xTarget = numpy.linspace(0.0,1.0,num=targetLength,endpoint=True)
         return numpy.interp(xTarget,xBase,baseArray)
 
-    def detectAbsorbanceValleys(self,intensityProfile):
+    def _compute_processed_profile(self,intensityProfile):
+        """
+        Returns the spectrum with the base intensity profile removed when available.
+        """
+        profile = numpy.asarray(intensityProfile,dtype=numpy.float32)
+        if profile.size == 0:
+            return profile
+
+        if self.baseIntensityProfile is None:
+            return profile
+
+        try:
+            baseArray = numpy.asarray(self.baseIntensityProfile,dtype=numpy.float32)
+        except Exception as exc:
+            self.log("WARNING",f"Failed to convert base intensity profile: {exc}")
+            return profile
+
+        if baseArray.size == 0:
+            return profile
+
+        if baseArray.size != profile.size:
+            x_base = numpy.linspace(0.0,1.0,num=baseArray.size,endpoint=True)
+            x_target = numpy.linspace(0.0,1.0,num=profile.size,endpoint=True)
+            try:
+                baseResampled = numpy.interp(x_target,x_base,baseArray)
+            except Exception as exc:
+                self.log("WARNING",f"Failed to resample base intensity profile: {exc}")
+                return profile
+        else:
+            baseResampled = baseArray
+
+        return baseResampled - profile
+
+    @staticmethod
+    def _resample_spectrum(spectrum,target_length):
+        """
+        Resamples a spectrum to a new length while preserving shape.
+        """
+        spectrumArray = numpy.asarray(spectrum,dtype=numpy.float32)
+        if spectrumArray.size == 0 or target_length <= 0:
+            return numpy.asarray([],dtype=numpy.float32)
+
+        if spectrumArray.size == target_length:
+            return spectrumArray
+
+        if spectrumArray.size == 1:
+            return numpy.full((target_length,),spectrumArray[0],dtype=numpy.float32)
+
+        x_source = numpy.linspace(0.0,1.0,num=spectrumArray.size,endpoint=True)
+        x_target = numpy.linspace(0.0,1.0,num=int(target_length),endpoint=True)
+        return numpy.interp(x_target,x_source,spectrumArray)
+
+    @staticmethod
+    def _normalize_profile(profile):
+        """
+        Normalizes an intensity profile to [0, 1] to mitigate absolute brightness differences.
+        """
+        array = numpy.asarray(profile,dtype=numpy.float32)
+        if array.size == 0:
+            return array
+        min_val = float(numpy.min(array))
+        max_val = float(numpy.max(array))
+        amplitude = max_val - min_val
+        if amplitude <= 0.0:
+            return numpy.zeros_like(array)
+        return (array - min_val) / amplitude
+
+    def detectAbsorbanceValleys(self,intensityProfile,processedProfile=None):
         """
         Detects valleys in the intensity profile by inverting the signal
         and finding peaks.
@@ -411,36 +557,18 @@ class Analysis(Module):
         """
         profile = numpy.asarray(intensityProfile,dtype=numpy.float32)
         if profile.size == 0:
-            return numpy.asarray([],dtype=int)
+            return numpy.asarray([],dtype=int),profile
 
-        workingProfile = numpy.copy(profile)
-        if self.baseIntensityProfile is not None:
-            try:
-                baseArray = numpy.asarray(self.baseIntensityProfile,dtype=numpy.float32)
-            except Exception as exc:
-                self.log("WARNING",f"Failed to convert base intensity profile: {exc}")
-                baseArray = None
-
-            if baseArray is not None and baseArray.size > 0:
-                if baseArray.size != workingProfile.size:
-                    x_base = numpy.linspace(0.0,1.0,num=baseArray.size,endpoint=True)
-                    x_target = numpy.linspace(0.0,1.0,num=workingProfile.size,endpoint=True)
-                    try:
-                        baseResampled = numpy.interp(x_target,x_base,baseArray)
-                    except Exception as exc:
-                        self.log("WARNING",f"Failed to resample base intensity profile: {exc}")
-                        baseResampled = None
-                else:
-                    baseResampled = baseArray
-
-                if baseResampled is not None and baseResampled.size == workingProfile.size:
-                    workingProfile = workingProfile - baseResampled
-                else:
-                    self.log("WARNING","Base intensity profile not used due to shape mismatch.")
+        if processedProfile is not None:
+            workingProfile = numpy.asarray(processedProfile,dtype=numpy.float32)
+            if workingProfile.size != profile.size:
+                workingProfile = self._compute_processed_profile(profile)
+        else:
+            workingProfile = self._compute_processed_profile(profile)
 
         if numpy.allclose(workingProfile.max(),workingProfile.min()):
             self.log("WARNING","Working profile is nearly flat after baseline subtraction; no valleys detected.")
-            return numpy.asarray([],dtype=int)
+            return numpy.asarray([],dtype=int),workingProfile
 
         # To detect valleys with find_peaks,we invert the signal.
         # Maximum absorption corresponds to the minimum intensity.
@@ -454,13 +582,22 @@ class Analysis(Module):
             distance=5 # Minimum distance between peaks (in pixels)
         )
         
-        return peaksIndices
+        return peaksIndices,workingProfile
 
-    def _store_reference_peak(self,wavelength,entry):
+    def _store_reference_spectrum(self,spectrum,metadata):
         """
-        Appends the provided entry to the reference spectra CSV and updates the in-memory cache.
+        Appends a full spectrum entry to the reference spectra CSV and updates the in-memory cache.
         """
-        fieldnames = ["wavelength","substance","ion_state","intensity","source"]
+        fieldnames = [
+            "substance",
+            "ion_state",
+            "source",
+            "captured_at",
+            "pixel_to_nm_factor",
+            "pixel_to_nm_offset",
+            "spectrum_length",
+            "spectrum_values"
+        ]
         filePath = self.referenceSpectraPath
         directory = os.path.dirname(filePath)
         if directory:
@@ -484,6 +621,18 @@ class Analysis(Module):
                 except OSError:
                     appendNewline = False
 
+            serializedSpectrum = json.dumps([float(value) for value in numpy.asarray(spectrum,dtype=numpy.float32)])
+            entry = {
+                "substance": metadata.get("substance","Unknown"),
+                "ion_state": metadata.get("ion_state",""),
+                "source": metadata.get("source",""),
+                "captured_at": metadata.get("captured_at",""),
+                "pixel_to_nm_factor": "" if metadata.get("pixel_to_nm_factor") is None else f"{float(metadata['pixel_to_nm_factor']):.6f}",
+                "pixel_to_nm_offset": "" if metadata.get("pixel_to_nm_offset") is None else f"{float(metadata['pixel_to_nm_offset']):.6f}",
+                "spectrum_length": str(int(len(spectrum))),
+                "spectrum_values": serializedSpectrum
+            }
+
             with open(filePath,"a",newline='') as csvFile:
                 if appendNewline:
                     csvFile.write("\n")
@@ -492,60 +641,90 @@ class Analysis(Module):
                     writer.writeheader()
                 writer.writerow(entry)
 
+            spectrumArray = numpy.asarray(spectrum,dtype=numpy.float32)
             if self.referenceSpectra is None:
                 self.referenceSpectra = []
-            self.referenceSpectra.append((float(wavelength),dict(entry)))
-            self.referenceSpectra.sort(key=lambda item: item[0])
+            self.referenceSpectra.append({
+                "substance"          : entry["substance"],
+                "ion_state"          : entry["ion_state"],
+                "source"             : entry["source"],
+                "captured_at"        : entry["captured_at"],
+                "pixel_to_nm_factor" : self._safe_float(entry["pixel_to_nm_factor"],default=self.config.get("pixel_to_nm_factor")),
+                "pixel_to_nm_offset" : self._safe_float(entry["pixel_to_nm_offset"],default=self.config.get("pixel_to_nm_offset")),
+                "spectrum"           : spectrumArray
+            })
 
-    def compareWithReferences(self,peaksIndices,intensityProfile):
+    def compareWithReferences(self,intensityProfile):
         """
-        Compares detected peaks with the reference spectra and compiles the results.
+        Confronta il profilo di intensità misurato con i profili salvati e
+        restituisce il riferimento più vicino entro la tolleranza impostata.
         
         Args:
-            peaksIndices (numpy.ndarray): The indices of the detected peaks.
-            intensityProfile (numpy.ndarray): The 1D intensity profile.
+            intensityProfile (numpy.ndarray): Profilo di intensità acquisito dalla camera.
             
         Returns:
-            dict: A dictionary containing the analysis results.
+            dict: Risultati del confronto, inclusi migliori corrispondenze e stato dell'identificazione.
         """
         if self.referenceSpectra is None:
             raise RuntimeError("Reference data not loaded. Cannot perform comparison.")
 
-        results = {
-            "detected_peaks"   : [],
-            "spectrogram_data" : intensityProfile.tolist()
+        capturedArray = numpy.asarray(intensityProfile,dtype=numpy.float32)
+        if capturedArray.size == 0:
+            raise ValueError("Captured intensity profile is empty.")
+
+        capturedNormalized = self._normalize_profile(capturedArray)
+        capturedNorm = float(numpy.linalg.norm(capturedNormalized))
+
+        matches = []
+
+        for reference in self.referenceSpectra:
+            refSpectrum = reference.get("spectrum")
+            if refSpectrum is None:
+                continue
+
+            alignedRef = self._resample_spectrum(refSpectrum,capturedArray.size)
+            if alignedRef.size == 0:
+                continue
+
+            refNormalized = self._normalize_profile(alignedRef)
+            diff = capturedNormalized - refNormalized
+            rmse = float(numpy.sqrt(numpy.mean(numpy.square(diff))))
+
+            if capturedNorm > 0.0:
+                relativeError = float(numpy.linalg.norm(diff) / capturedNorm)
+            else:
+                relativeError = float(numpy.linalg.norm(diff))
+
+            matches.append({
+                "substance": reference.get("substance","Unknown"),
+                "ion_state": reference.get("ion_state",""),
+                "source": reference.get("source",""),
+                "captured_at": reference.get("captured_at",""),
+                "rmse": rmse,
+                "relative_error": relativeError,
+                "within_tolerance": relativeError <= self.profileMatchTolerance
+            })
+
+        matches.sort(key=lambda item: item["relative_error"])
+
+        identified = []
+        best_match = matches[0] if matches else None
+        if best_match and best_match["relative_error"] <= self.profileMatchTolerance:
+            identified.append(best_match["substance"])
+
+        match_within_tolerance = bool(best_match and best_match["relative_error"] <= self.profileMatchTolerance)
+
+        return {
+            "detected_peaks": [],
+            "raw_spectrogram": capturedArray.tolist(),
+            "processed_spectrogram": [],
+            "normalized_spectrogram": capturedNormalized.tolist(),
+            "reference_matches": matches,
+            "identified_substances": identified,
+            "best_match": best_match,
+            "tolerance": self.profileMatchTolerance,
+            "match_within_tolerance": match_within_tolerance
         }
-        
-        identifiedSubstances = set()
-
-        for peakIdx in peaksIndices:
-            # Example: pixel to wavelength conversion (assuming linear calibration)
-            pixelToNmFactor = 0.5 # nm per pixel,to be calibrated
-            estimatedWavelengthNm = peakIdx * pixelToNmFactor + 400 # Example offset
-            
-            # Comparison with reference data using numpy.isclose for tolerance
-            for refWavelength,rowData in self.referenceSpectra:
-                if numpy.isclose(estimatedWavelengthNm,refWavelength,atol=self.toleranceNm):
-                    substance = rowData.get('substance',"Unknown")
-                    if substance not in identifiedSubstances:
-                        self.log("INFO",f"Substance '{substance}' identified! Wavelength: {estimatedWavelengthNm:.2f} nm.")
-                        identifiedSubstances.add(substance)
-
-                    results["detected_peaks"].append({
-                        "pixel_index": int(peakIdx),
-                        "wavelength_nm": float(estimatedWavelengthNm),
-                        "intensity": float(intensityProfile[peakIdx]),
-                        "match": {
-                            "substance": substance,
-                            "reference_nm": float(refWavelength),
-                            "delta_nm": abs(estimatedWavelengthNm - refWavelength)
-                        }
-                    })
-                    break # A peak corresponds to only one reference substance
-
-        results["identified_substances"] = list(identifiedSubstances)
-        
-        return results
 
     def sendAnalysisResults(self,results):
         """
@@ -556,7 +735,13 @@ class Analysis(Module):
         """
         payload = {
             "identified_substances": results.get("identified_substances", []),
-            "spectrogram_data": results.get("spectrogram_data", []),
+            "spectrogram_data": results.get("raw_spectrogram", []),
+            "processed_spectrogram": results.get("processed_spectrogram", []),
+            "normalized_spectrogram": results.get("normalized_spectrogram", []),
+            "reference_matches": results.get("reference_matches", []),
+            "best_match": results.get("best_match"),
+            "match_within_tolerance": results.get("match_within_tolerance", False),
+            "match_tolerance": results.get("tolerance", self.profileMatchTolerance),
             "details": results
         }
         self.sendMessage("All","AnalysisComplete",payload)
