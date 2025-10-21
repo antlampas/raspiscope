@@ -10,7 +10,6 @@ import csv
 import time
 import base64
 import json
-import math
 import os
 from scipy.signal import find_peaks
 from threading    import Thread, Lock
@@ -35,6 +34,12 @@ class Analysis(Module):
         self._newSubstanceLock     = Lock()
         self._newSubstanceState    = None
         self._referenceLock        = Lock()
+        tolerance = self.config.get("profile_match_tolerance",0.20)
+        try:
+            tolerance = float(tolerance)
+        except (TypeError,ValueError):
+            tolerance = 0.05
+        self.profileMatchTolerance = max(0.0,tolerance)
 
         x, y, w, h = [int(round(float(value))) for value in self.config.get("manual_rect")]
         self.manualRect = (x, y, w, h)
@@ -199,16 +204,11 @@ class Analysis(Module):
             if intensityProfile.size == 0:
                 raise ValueError("Extracted intensity profile is empty.")
 
-            baseProfile = self._get_resampled_base_profile(intensityProfile.size)
-            diffProfile = baseProfile - intensityProfile
-            if diffProfile.size == 0:
-                raise ValueError("Difference profile is empty.")
-
-            peakIdx = int(numpy.argmax(diffProfile))
-            peakValue = float(diffProfile[peakIdx])
-
             pixelToNmFactor = self.config.get("pixel_to_nm_factor",0.5)
             pixelOffset = self.config.get("pixel_to_nm_offset",400.0)
+
+            peakIdx = int(numpy.argmax(intensityProfile))
+            peakValue = float(intensityProfile[peakIdx])
             wavelengthNm = peakIdx * pixelToNmFactor + pixelOffset
 
             metadata = {
@@ -220,7 +220,7 @@ class Analysis(Module):
                 "pixel_to_nm_offset": pixelOffset
             }
 
-            self._store_reference_spectrum(diffProfile,metadata)
+            self._store_reference_spectrum(intensityProfile,metadata)
 
             self.sendMessage(
                 "All",
@@ -229,10 +229,11 @@ class Analysis(Module):
                     "status": "completed",
                     "substance": substanceName,
                     "wavelength_nm": float(wavelengthNm),
-                    "intensity": peakValue
+                    "intensity": peakValue,
+                    "profile_length": int(intensityProfile.size)
                 }
             )
-            self.log("INFO",f"New reference '{substanceName}' stored at {wavelengthNm:.2f} nm (intensity delta {peakValue:.3f}).")
+            self.log("INFO",f"New reference '{substanceName}' stored with peak at {wavelengthNm:.2f} nm (intensity {peakValue:.3f}).")
         except Exception as exc:
             self.log("ERROR",f"Failed to register new substance '{substanceName}': {exc}")
             self.sendMessage("All","NewReferenceCapture",{"status": "error","substance": substanceName,"message": str(exc)})
@@ -349,17 +350,24 @@ class Analysis(Module):
             intensityProfile = numpy.asarray(self.extractSpectrogramProfile(imageData),dtype=numpy.float32)
             if intensityProfile.size == 0:
                 raise ValueError("Empty intensity profile extracted from image.")
-            
-            # Phase 2: Baseline removal and valley detection (points of maximum absorbance)
-            peaksIndices,processedProfile = self.detectAbsorbanceValleys(
-                intensityProfile,
-                processedProfile=self._compute_processed_profile(intensityProfile)
-            )
-            
-            # Phase 3: Comparison with reference spectra
-            results = self.compareWithReferences(processedProfile,intensityProfile,peaksIndices)
 
-            # Phase 4: Sending results
+            # Phase 2: Comparison with reference spectra using direct profile matching
+            results = self.compareWithReferences(intensityProfile)
+
+            best_match = results.get("best_match")
+            rel_error = best_match.get("relative_error") if isinstance(best_match,dict) else None
+            rel_error_str = f"{float(rel_error):.4f}" if isinstance(rel_error,(int,float)) else "n/a"
+
+            if results.get("match_within_tolerance"):
+                substance = best_match.get("substance","Unknown") if isinstance(best_match,dict) else "Unknown"
+                self.log("INFO",f"Profile matched with '{substance}' (relative error {rel_error_str} <= tolerance {self.profileMatchTolerance:.4f}).")
+            elif best_match:
+                substance = best_match.get("substance","Unknown")
+                self.log("INFO",f"No reference within tolerance {self.profileMatchTolerance:.4f}. Best candidate '{substance}' has relative error {rel_error_str}.")
+            else:
+                self.log("INFO","No reference spectra available for comparison.")
+
+            # Phase 3: Sending results
             self.sendAnalysisResults(results)
 
         except Exception as e:
@@ -523,6 +531,21 @@ class Analysis(Module):
         x_target = numpy.linspace(0.0,1.0,num=int(target_length),endpoint=True)
         return numpy.interp(x_target,x_source,spectrumArray)
 
+    @staticmethod
+    def _normalize_profile(profile):
+        """
+        Normalizes an intensity profile to [0, 1] to mitigate absolute brightness differences.
+        """
+        array = numpy.asarray(profile,dtype=numpy.float32)
+        if array.size == 0:
+            return array
+        min_val = float(numpy.min(array))
+        max_val = float(numpy.max(array))
+        amplitude = max_val - min_val
+        if amplitude <= 0.0:
+            return numpy.zeros_like(array)
+        return (array - min_val) / amplitude
+
     def detectAbsorbanceValleys(self,intensityProfile,processedProfile=None):
         """
         Detects valleys in the intensity profile by inverting the signal
@@ -633,64 +656,46 @@ class Analysis(Module):
                 "spectrum"           : spectrumArray
             })
 
-    def compareWithReferences(self,processedProfile,intensityProfile,peaksIndices):
+    def compareWithReferences(self,intensityProfile):
         """
-        Compares detected peaks with the reference spectra and compiles the results.
+        Confronta il profilo di intensità misurato con i profili salvati e
+        restituisce il riferimento più vicino entro la tolleranza impostata.
         
         Args:
-            processedProfile (numpy.ndarray): The baseline-corrected spectrum.
-            intensityProfile (numpy.ndarray): The raw 1D intensity profile.
-            peaksIndices (numpy.ndarray): The indices of the detected peaks.
+            intensityProfile (numpy.ndarray): Profilo di intensità acquisito dalla camera.
             
         Returns:
-            dict: A dictionary containing the analysis results.
+            dict: Risultati del confronto, inclusi migliori corrispondenze e stato dell'identificazione.
         """
         if self.referenceSpectra is None:
             raise RuntimeError("Reference data not loaded. Cannot perform comparison.")
 
-        processedArray = numpy.asarray(processedProfile,dtype=numpy.float32)
-        rawArray = numpy.asarray(intensityProfile,dtype=numpy.float32)
+        capturedArray = numpy.asarray(intensityProfile,dtype=numpy.float32)
+        if capturedArray.size == 0:
+            raise ValueError("Captured intensity profile is empty.")
 
-        results = {
-            "detected_peaks"        : [],
-            "raw_spectrogram"       : rawArray.tolist(),
-            "processed_spectrogram" : processedArray.tolist(),
-            "reference_matches"     : []
-        }
-
-        pixelToNmFactor = self.config.get("pixel_to_nm_factor",0.5)
-        pixelOffset = self.config.get("pixel_to_nm_offset",400.0)
-
-        for peakIdx in peaksIndices:
-            idx = int(peakIdx)
-            estimatedWavelengthNm = idx * pixelToNmFactor + pixelOffset
-            detected = {
-                "pixel_index": idx,
-                "wavelength_nm": float(estimatedWavelengthNm)
-            }
-            if 0 <= idx < rawArray.size:
-                detected["raw_intensity"] = float(rawArray[idx])
-            if 0 <= idx < processedArray.size:
-                detected["processed_intensity"] = float(processedArray[idx])
-            results["detected_peaks"].append(detected)
+        capturedNormalized = self._normalize_profile(capturedArray)
+        capturedNorm = float(numpy.linalg.norm(capturedNormalized))
 
         matches = []
 
         for reference in self.referenceSpectra:
             refSpectrum = reference.get("spectrum")
-            if refSpectrum is None or len(refSpectrum) == 0:
+            if refSpectrum is None:
                 continue
 
-            alignedRef = self._resample_spectrum(refSpectrum,processedArray.size)
-            if alignedRef.size == 0 or processedArray.size == 0:
+            alignedRef = self._resample_spectrum(refSpectrum,capturedArray.size)
+            if alignedRef.size == 0:
                 continue
 
-            diff = processedArray - alignedRef
+            refNormalized = self._normalize_profile(alignedRef)
+            diff = capturedNormalized - refNormalized
             rmse = float(numpy.sqrt(numpy.mean(numpy.square(diff))))
 
-            numerator = float(numpy.dot(processedArray,alignedRef))
-            denom = float(numpy.linalg.norm(processedArray) * numpy.linalg.norm(alignedRef))
-            similarity = 0.0 if denom == 0.0 else numerator / denom
+            if capturedNorm > 0.0:
+                relativeError = float(numpy.linalg.norm(diff) / capturedNorm)
+            else:
+                relativeError = float(numpy.linalg.norm(diff))
 
             matches.append({
                 "substance": reference.get("substance","Unknown"),
@@ -698,14 +703,30 @@ class Analysis(Module):
                 "source": reference.get("source",""),
                 "captured_at": reference.get("captured_at",""),
                 "rmse": rmse,
-                "similarity": similarity
+                "relative_error": relativeError,
+                "within_tolerance": relativeError <= self.profileMatchTolerance
             })
 
-        matches.sort(key=lambda item: (-item["similarity"],item["rmse"]))
-        results["reference_matches"] = matches
-        results["identified_substances"] = [match["substance"] for match in matches[:3]]
+        matches.sort(key=lambda item: item["relative_error"])
 
-        return results
+        identified = []
+        best_match = matches[0] if matches else None
+        if best_match and best_match["relative_error"] <= self.profileMatchTolerance:
+            identified.append(best_match["substance"])
+
+        match_within_tolerance = bool(best_match and best_match["relative_error"] <= self.profileMatchTolerance)
+
+        return {
+            "detected_peaks": [],
+            "raw_spectrogram": capturedArray.tolist(),
+            "processed_spectrogram": [],
+            "normalized_spectrogram": capturedNormalized.tolist(),
+            "reference_matches": matches,
+            "identified_substances": identified,
+            "best_match": best_match,
+            "tolerance": self.profileMatchTolerance,
+            "match_within_tolerance": match_within_tolerance
+        }
 
     def sendAnalysisResults(self,results):
         """
@@ -718,7 +739,11 @@ class Analysis(Module):
             "identified_substances": results.get("identified_substances", []),
             "spectrogram_data": results.get("raw_spectrogram", []),
             "processed_spectrogram": results.get("processed_spectrogram", []),
+            "normalized_spectrogram": results.get("normalized_spectrogram", []),
             "reference_matches": results.get("reference_matches", []),
+            "best_match": results.get("best_match"),
+            "match_within_tolerance": results.get("match_within_tolerance", False),
+            "match_tolerance": results.get("tolerance", self.profileMatchTolerance),
             "details": results
         }
         self.sendMessage("All","AnalysisComplete",payload)
