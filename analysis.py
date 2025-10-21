@@ -41,6 +41,9 @@ class Analysis(Module):
             tolerance = 0.05
         self.profileMatchTolerance = max(0.0,tolerance)
 
+        x, y, w, h = [int(round(float(value))) for value in self.config.get("manual_rect")]
+        self.manualRect = (x, y, w, h)
+
     def onStart(self):
         """
         Method called when the module starts.
@@ -383,12 +386,11 @@ class Analysis(Module):
         """
         height,width = imageData.shape[:2]
 
-        manualRect = (15,550,310,10)
-        x,y,w,h = manualRect
-        xStart = max(0,int(x))
-        yStart = max(0,int(y))
-        xEnd = min(width,xStart + int(w))
-        yEnd = min(height,yStart + int(h))
+        x,y,w,h = self.manualRect
+        xStart  = max(0,int(x))
+        yStart  = max(0,int(y))
+        xEnd    = min(width,xStart + int(w))
+        yEnd    = min(height,yStart + int(h))
         if xEnd <= xStart or yEnd <= yStart:
             raise ValueError("Configured manual ROI is invalid for the current image dimensions.")
 

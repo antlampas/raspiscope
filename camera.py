@@ -10,7 +10,7 @@ import cv2
 import base64
 import json
 from picamera2 import Picamera2
-from threading import Thread
+from threading import Thread, Event, Lock
 from module    import Module
 from configLoader import ConfigLoader
 
@@ -31,10 +31,44 @@ class Camera(Module):
             self.resolution = (int(resolution_cfg[0]), int(resolution_cfg[1]))
         else:
             self.resolution = (1920, 1080)
-        self.gain     = self.config.get('gain', 1.0)
-        self.exposure = self.config.get('exposure', 10000)
-        self.camera   = None
+        self.gain        = self._safe_float(self.config.get('gain', 1.0), fallback=1.0)
+        self.exposure    = int(self._safe_float(self.config.get('exposure', 10000), fallback=10000))
+        self.awb_gains   = self._parse_awb_gains(self.config.get('awb_gains'))
+        self.camera      = None
 
+        self.light_on_timeout   = self._get_duration('light_on_timeout_s', default=2.0)
+        self.light_settle_time  = self._get_duration('light_settle_time_s', default=0.05)
+        self.control_settle_time = self._get_duration('control_settle_time_s', default=0.02)
+
+        self._light_ready_event     = Event()
+        self._capture_lock          = Lock()
+        self._manual_mode_configured = False
+
+
+    def _safe_float(self, value, fallback):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return fallback
+
+    def _parse_awb_gains(self, value):
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            try:
+                r_gain = float(value[0])
+                b_gain = float(value[1])
+                if r_gain > 0 and b_gain > 0:
+                    return (r_gain, b_gain)
+            except (TypeError, ValueError):
+                pass
+        return (1.0, 1.0)
+
+    def _get_duration(self, key, default):
+        raw = self.config.get(key, default)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = default
+        return max(0.0, value)
 
     def onStart(self):
         """
@@ -45,11 +79,9 @@ class Camera(Module):
             self.camera = Picamera2()
             camConfig  = self.camera.create_still_configuration({"size": self.resolution})
             self.camera.configure(camConfig)
-            self.camera.set_controls({
-                                        "AnalogueGain": self.gain,
-                                        "ExposureTime": self.exposure,
-                                    })
             self.camera.start()
+            self._manual_mode_configured = False
+            self._ensure_manual_mode(force=True)
             self.log("INFO",f"Camera started and configured with resolution {self.resolution}.")
         except Exception as e:
             self.log("ERROR",f"Could not initialize camera: {e}")
@@ -59,39 +91,47 @@ class Camera(Module):
         """
         Handles incoming messages.
         """
+        msgType = message.get("Message",{}).get("type")
+        sender = message.get("Sender")
+        if sender == "LightSource" and msgType in ("TurnedOn","TurnedOff"):
+            if msgType == "TurnedOn":
+                self._light_ready_event.set()
+            else:
+                self._light_ready_event.clear()
+            return
+
         if not self.camera:
             self.log("WARNING","Camera not available,ignoring command.")
             return
 
-        msgType = message.get("Message",{}).get("type")
-
         if msgType == "CuvettePresent":
             self.log("INFO","Received 'Cuvette Present' signal. Taking a picture.")
-            picture = self.takePicture()
-            if picture:
-                self.sendMessage("Analysis","Analyze",picture)
-                self.log("INFO","Picture taken and sent for analysis.")
-            else:
-                self.log("ERROR","Failed to take a picture.")
+            self._schedule_picture_capture("Analysis","Analyze","Picture taken and sent for analysis.")
         elif msgType == "Take":
             self.log("INFO","Received 'Take' command. Taking a picture.")
-            picture = self.takePicture()
-            if picture:
-                self.sendMessage("All","PictureTaken",picture)
-                self.log("INFO","Picture taken and sent to anyone listening.")
-            else:
-                self.log("ERROR","Failed to take a picture.")
+            self._schedule_picture_capture("All","PictureTaken","Picture taken and sent to anyone listening.")
         elif msgType == "Analyze":
             self.log("INFO","Received 'Analyze' command. Starting analysis.")
-            picture = self.takePicture()
-            if picture:
-                self.sendMessage("Analysis","Analyze",picture)
-                self.log("INFO","Picture taken and sent for analysis.")
-            else:
-                self.log("ERROR","Failed to take a picture.")
+            self._schedule_picture_capture("Analysis","Analyze","Picture taken and sent for analysis.")
         elif msgType == "Calibrate":
             self.log("INFO","Received 'Calibrate' command. Starting calibration.")
             self.calibrate()
+
+    def _schedule_picture_capture(self,destination,msg_type,success_log,failure_log="Failed to take a picture."):
+        """
+        Launches an asynchronous capture workflow so the main loop can keep
+        processing messages (e.g., waiting for the LED to confirm it is on).
+        """
+        def worker():
+            picture = self.takePicture()
+            if picture:
+                self.sendMessage(destination,msg_type,picture)
+                self.log("INFO",success_log)
+            else:
+                self.log("ERROR",failure_log)
+
+        capture_thread = Thread(target=worker,daemon=True)
+        capture_thread.start()
 
     def takePicture(self):
         """
@@ -99,26 +139,110 @@ class Camera(Module):
         """
         if not self.camera:
             self.log("ERROR","Cannot take picture,camera not initialized.")
+            return None
+
+        frame = None
+        led_request_sent = False
+
+        with self._capture_lock:
+            self.log("INFO","Taking picture...")
+            self._ensure_manual_mode()
+
+            self._light_ready_event.clear()
+            self.sendMessage("LightSource","TurnOn")
+            led_request_sent = True
+
+            light_ready = self._light_ready_event.wait(self.light_on_timeout)
+            if not light_ready:
+                self.log("WARNING",f"Timed out waiting for light source to turn on after {self.light_on_timeout:.2f}s; proceeding with capture.")
+
+            if self.light_settle_time > 0:
+                time.sleep(self.light_settle_time)
+
+            self._wait_for_camera_settle()
+
+            try:
+                frame = self.camera.capture_array("main")
+            except Exception as exc:
+                self.log("ERROR",f"Failed to capture image: {exc}")
+                frame = None
+            finally:
+                if led_request_sent:
+                    self.sendMessage("LightSource","TurnOff")
+                self._light_ready_event.clear()
+
+        if frame is None:
+            return None
+
+        try:
+            success, buffer = cv2.imencode('.jpg', frame)
+        except cv2.error as exc:
+            self.log("ERROR",f"Failed to encode image: {exc}")
+            return None
+
+        if not success:
+            self.log("ERROR","Failed to encode image: imencode returned unsuccessful status.")
+            return None
+
+        imageB64 = base64.b64encode(buffer).decode('utf-8')
+        payload = {"image": imageB64}
+        self.log("INFO","Picture taken")
+        return payload
+
+    def _ensure_manual_mode(self, force=False):
+        if not self.camera:
+            return
+
+        if not force and self._manual_mode_configured:
             return
 
         try:
-            self.log("INFO","Taking picture...")
-            # Capture the image as a numpy array
-            self.sendMessage("LightSource","TurnOn")
-            time.sleep(0.1)
-            imageArray = self.camera.capture_array()
-            time.sleep(0.1)
-            self.sendMessage("LightSource","TurnOff")
+            self.camera.set_controls({
+                "AeEnable": False,
+                "AwbEnable": False
+            })
+        except Exception as exc:
+            self.log("WARNING",f"Failed to disable camera auto controls: {exc}")
 
-            # Encode the image in JPG format and then in Base64
-            _,buffer = cv2.imencode('.jpg',imageArray)
-            imageB64 = base64.b64encode(buffer).decode('utf-8')
+        self._apply_camera_controls(self.gain, self.exposure, self.awb_gains)
+        self._manual_mode_configured = True
 
-            payload = {"image": imageB64}
-            self.log("INFO","Picture taken")
-            return payload
-        except Exception as e:
-            self.log("ERROR",f"ERROR while taking picture: {e}")
+    def _apply_camera_controls(self, gain, exposure, awb_gains):
+        if not self.camera:
+            return
+
+        controls = {}
+        if gain is not None:
+            controls["AnalogueGain"] = float(gain)
+        if exposure is not None:
+            controls["ExposureTime"] = int(exposure)
+        if awb_gains:
+            controls["ColourGains"] = (float(awb_gains[0]), float(awb_gains[1]))
+
+        if not controls:
+            return
+
+        try:
+            self.camera.set_controls(controls)
+        except Exception as exc:
+            self.log("WARNING",f"Failed to apply manual camera controls: {exc}")
+            return
+
+        self._wait_for_camera_settle()
+
+    def _wait_for_camera_settle(self):
+        if not self.camera:
+            return
+
+        wait_for_idle = getattr(self.camera, "wait_for_idle", None)
+        if callable(wait_for_idle):
+            try:
+                wait_for_idle()
+            except Exception:
+                pass
+
+        if self.control_settle_time > 0:
+            time.sleep(self.control_settle_time)
 
     def calibrate(self):
         """
@@ -145,6 +269,8 @@ class Camera(Module):
         self.log("INFO", "Starting camera calibration...")
         self.sendMessage("All", "CalibrationStarted", {"message": "Starting camera calibration..."})
 
+        self._ensure_manual_mode(force=True)
+
         # Get valid gain range from the camera itself
         try:
             gain_min, gain_max, _ = self.camera.camera_controls['AnalogueGain']
@@ -158,7 +284,7 @@ class Camera(Module):
             return list(product(range(15,260,10), range(15,260,10), range(15,260,10)))
 
         # Placeholder lists for camera and LED settings
-        gain_list           = [gain for gain in range(gain_min, gain_max, 0.2)]
+        gain_list           = numpy.arange(gain_min, gain_max, 0.2)
         exposure_list       = [microseconds * 1000 for microseconds in range(10,105,10)] # in microseconds
         rgb_colors_list     = makeColorsList()
         led_brightness_list = [light for light in range(25,260,10)] # values from 0-255
@@ -176,13 +302,13 @@ class Camera(Module):
                     for r, g, b in rgb_colors_list:
                         for brightness in led_brightness_list:
                             # 1. Set camera and LED parameters
-                            self.camera.set_controls({"AnalogueGain": gain, "ExposureTime": exposure})
+                            self._apply_camera_controls(gain, exposure, self.awb_gains)
                             self.sendMessage("LightSource", "SetColor", {"r": r, "g": g, "b": b})
                             self.sendMessage("LightSource", "Dim", {"brightness": brightness})
-                            time.sleep(0.001) # Wait for the LED to update
+                            time.sleep(max(0.001, self.light_settle_time)) # Wait for the LED to update
                             
                             # 2. Capture the image
-                            image_array = self.camera.capture_array()
+                            image_array = self.camera.capture_array("main")
                             
                             # 3. Convert to grayscale and HSV for metric calculation
                             gray_image = cv2.cvtColor(image_array, cv2.COLOR_BGR2GRAY)
@@ -209,21 +335,22 @@ class Camera(Module):
                             
                             # 6. Update the best settings
                             if total_score > best_settings["score"]:
-                                best_settings["camera"]["gain"]      = gain
-                                best_settings["camera"]["exposure"]  = exposure
-                                best_settings["light"]["r"]          = r
-                                best_settings["light"]["g"]          = g
-                                best_settings["light"]["b"]          = b
-                                best_settings["light"]["brightness"] = brightness
-                                best_settings["score"]               = total_score
+                                best_settings["camera"]["gain"]      = float(gain)
+                                best_settings["camera"]["exposure"]  = int(exposure)
+                                best_settings["light"]["r"]          = int(r)
+                                best_settings["light"]["g"]          = int(g)
+                                best_settings["light"]["b"]          = int(b)
+                                best_settings["light"]["brightness"] = int(brightness)
+                                best_settings["score"]               = float(total_score)
 
             # 7. Apply the best settings found
             if best_settings["camera"]["gain"]:
                 # Set best camera settings
-                self.camera.set_controls({
-                    "AnalogueGain": best_settings["camera"]["gain"],
-                    "ExposureTime": best_settings["camera"]["exposure"]
-                })
+                self._apply_camera_controls(
+                    best_settings["camera"]["gain"],
+                    best_settings["camera"]["exposure"],
+                    self.awb_gains
+                )
                 # Set best light settings
                 self.sendMessage("LightSource", "SetColor", {
                     "r": best_settings["light"]["r"],
@@ -234,6 +361,10 @@ class Camera(Module):
 
                 # Update config in memory
                 self.config.update(best_settings)
+                self.gain     = self._safe_float(best_settings["camera"]["gain"], fallback=self.gain)
+                self.exposure = int(self._safe_float(best_settings["camera"]["exposure"], fallback=self.exposure))
+                self._manual_mode_configured = False
+                self._ensure_manual_mode(force=True)
 
                 # Save config to file
                 try:
