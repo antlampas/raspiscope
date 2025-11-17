@@ -12,6 +12,8 @@ Questa camera oscura è il complemento hardware del Raspiscope, lo spettrofotome
 - **Sensore ad effetto Hall SS49E** per rilevare la presenza della cuvetta ([link Amazon](https://www.amazon.it/EPLZON-Rilevatore-magnetico-riparazione-confezione/dp/B0C7TF2QN7/ref=sr_1_1_sspa?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-1-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&psc=1)).
 - **Reticolo a diffrazione** per scomporre lo spettro luminoso ([link Amazon](https://www.amazon.it/educative-diffrazione-trasmissione-strumento-disponibili/dp/B0FS6TSNWJ/ref=sr_1_3?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-3))
 - **LED RGB** come fonte di luce ([link Amazon](https://www.amazon.it/BTF-LIGHTING-indirizzabili-individuali-dissipatore-incorporato/dp/B088K8DVMQ/ref=sr_1_6?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-6))
+- **Raspberry Pi Camera V2 o V3** ([link Amazon](https://www.amazon.it/Raspberry-Pi-Modulo-NoIR-fotocamera/dp/B01ER2SMHY/ref=sr_1_1?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-1)) ([link Amazon](https://www.amazon.it/Raspberry-Pi-Camera-Module-NoIR/dp/B0BRY3L9H7/ref=sr_1_7?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-7))
+- **Raspberry Pi** ([link Amazon](https://www.amazon.it/Raspberry-Starter-Alimentatore-Alloggiamento-dissipatore/dp/B0DZQQSK8C/ref=sr_1_1_sspa?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-1-spons&aref=Y3mbFXHpZ3&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY))
 
 ### Licenza
 Il progetto è distribuito come free software con licenza Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0).
@@ -25,6 +27,8 @@ This dark chamber is the hardware companion to Raspiscope, the Raspberry Pi 4-ba
 - **SS49E Hall effect sensor** to monitor the presence of the cuvette ([Amazon link](https://www.amazon.it/EPLZON-Rilevatore-magnetico-riparazione-confezione/dp/B0C7TF2QN7/ref=sr_1_1_sspa?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-1-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&psc=1)).
 - **Diffraction grating** to decompose the light spectrum ([Amazon link](https://www.amazon.it/educative-diffrazione-trasmissione-strumento-disponibili/dp/B0FS6TSNWJ/ref=sr_1_3?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-3))
 - **RGB LED** as light source ([Amazon link](https://www.amazon.it/BTF-LIGHTING-indirizzabili-individuali-dissipatore-incorporato/dp/B088K8DVMQ/ref=sr_1_6?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-6))
+- **Raspberry Pi Camera V2 or V3** ([Amazon link](https://www.amazon.it/Raspberry-Pi-Modulo-NoIR-fotocamera/dp/B01ER2SMHY/ref=sr_1_1?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-1)) ([Amazon link](https://www.amazon.it/Raspberry-Pi-Camera-Module-NoIR/dp/B0BRY3L9H7/ref=sr_1_7?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-7))
+- **Raspberry Pi** ([Amazon link](https://www.amazon.it/Raspberry-Starter-Alimentatore-Alloggiamento-dissipatore/dp/B0DZQQSK8C/ref=sr_1_1_sspa?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-1-spons&aref=Y3mbFXHpZ3&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY))
 
 ### License
 The project is released as free software under the Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) license.
