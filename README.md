@@ -62,19 +62,19 @@ This dark chamber is the hardware companion to Raspiscope, the Raspberry Pi 4-ba
 
 ### Construction Schemes
 
-![Schema Elettrico](./Schema%20Generale.png)
-![Schema Visuale](./Schema%20Visuale.png)
+![Schema Elettrico](./spectroscope/images/Schema%20Generale.png)
+![Schema Visuale](./spectroscope/images/Schema%20Visuale.png)
 
 ### Images:
 
-![Project Scheme 1](./images/spettro001.jpg)
-![Project Scheme 2](./images/spettro002.jpg)
-![Project Scheme 3](./images/spettro003.jpg)
-![Project Scheme 4](./images/spettro004.jpg)
-![Project Scheme 5](./images/spettro005.jpg)
-![Project Scheme 6](./images/spettro006.jpg)
-![Project Scheme 7](./images/spettro007.jpg)
-![Project Scheme 8](./images/spettro008.jpg)
+![Project Scheme 1](./spectroscope/images/spettro001.jpg)
+![Project Scheme 2](./spectroscope/images/spettro002.jpg)
+![Project Scheme 3](./spectroscope/images/spettro003.jpg)
+![Project Scheme 4](./spectroscope/images/spettro004.jpg)
+![Project Scheme 5](./spectroscope/images/spettro005.jpg)
+![Project Scheme 6](./spectroscope/images/spettro006.jpg)
+![Project Scheme 7](./spectroscope/images/spettro007.jpg)
+![Project Scheme 8](./spectroscope/images/spettro008.jpg)
 
 ---
 _If any section is unclear or missing, please provide feedback for further refinement._
