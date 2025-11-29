@@ -1,6 +1,7 @@
-# Raspiscope Python Application
-## Downlod the 3D files for FreeCAD Software.
-[click here](https://github.com/antlampas/raspiscope-spectroscope)
+# Raspiscope
+
+### License
+The project is released as free software under the Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) license.
 
 ## Project Architecture
 - **Modular Design:** Each hardware/software function (e.g., camera, light source, cuvette sensor, analysis, logger, GUI) is implemented as a separate module class (see `camera.py`, `lightSource.py`, etc.), inheriting from the abstract `Module` base class (`module.py`).
@@ -46,56 +47,34 @@
 - `tests/unit/`: Unit tests for each module
 - `diagrams/`: Architecture diagrams
 
+## Hardware
+
+This dark chamber is the hardware companion to Raspiscope, the Raspberry Pi 4-based spectrophotometer that runs the software linked above. Every part is tuned for resin 3D printing to keep the optical path opaque and dimensionally accurate.
+
+### Additional components
+- **Bidirectional level shifter** to translate the Raspberry Pi 4 GPIO 3.3 V logic to the 5 V required by the LED and the Hall effect sensor ([Amazon link](https://www.amazon.it/Gebildet-Converter-Bi-Directional-Shifter-CYT1076/dp/B07RY15XMJ/ref=sr_1_2_sspa?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-2-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY)).
+- **12 V -> 5 V DC-DC converter** when powering the LED and sensor with eight AA batteries; otherwise rely on a dedicated 5 V power supply. You can tap the Raspberry Pi’s 5 V rail, but it often proves unstable for this load ([Amazon link](https://www.amazon.it/JZK-Convertitore-ultraridotto-regolabile-alimentazione/dp/B08HK6Z91G/ref=pd_ybh_a_d_sccl_8/261-7476846-8643263?psc=1)).
+- **SS49E Hall effect sensor** to monitor the presence of the cuvette ([Amazon link](https://www.amazon.it/EPLZON-Rilevatore-magnetico-riparazione-confezione/dp/B0C7TF2QN7/ref=sr_1_1_sspa?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-1-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&psc=1)).
+- **Diffraction grating** to decompose the light spectrum ([Amazon link](https://www.amazon.it/educative-diffrazione-trasmissione-strumento-disponibili/dp/B0FS6TSNWJ/ref=sr_1_3?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-3))
+- **RGB LED** as light source ([Amazon link](https://www.amazon.it/BTF-LIGHTING-indirizzabili-individuali-dissipatore-incorporato/dp/B088K8DVMQ/ref=sr_1_6?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-6))
+- **Raspberry Pi Camera V2 or V3** ([Amazon link](https://www.amazon.it/Raspberry-Pi-Modulo-NoIR-fotocamera/dp/B01ER2SMHY/ref=sr_1_1?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-1)) ([Amazon link](https://www.amazon.it/Raspberry-Pi-Camera-Module-NoIR/dp/B0BRY3L9H7/ref=sr_1_7?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-7))
+- **Raspberry Pi** ([Amazon link](https://www.amazon.it/Raspberry-Starter-Alimentatore-Alloggiamento-dissipatore/dp/B0DZQQSK8C/ref=sr_1_1_sspa?__mk_it_IT=%C3%85M%C3%85%C5%BD%C3%95%C3%91&sr=8-1-spons&aref=Y3mbFXHpZ3&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY))
+
+### Construction Schemes
+
+![Schema Elettrico](./Schema%20Generale.png)
+![Schema Visuale](./Schema%20Visuale.png)
+
+### Images:
+
+![Project Scheme 1](./images/spettro001.jpg)
+![Project Scheme 2](./images/spettro002.jpg)
+![Project Scheme 3](./images/spettro003.jpg)
+![Project Scheme 4](./images/spettro004.jpg)
+![Project Scheme 5](./images/spettro005.jpg)
+![Project Scheme 6](./images/spettro006.jpg)
+![Project Scheme 7](./images/spettro007.jpg)
+![Project Scheme 8](./images/spettro008.jpg)
+
 ---
 _If any section is unclear or missing, please provide feedback for further refinement._
-
-ITALIAN (Translated to English)
-
-This section retains the structure of the original Italian walkthrough, now rendered in English for consistency.
-
-## Project Architecture
-- **Modular design:** Every hardware or software capability (camera, light source, cuvette sensor, analysis, logger, GUI) lives in its own module class (see `camera.py`, `lightSource.py`, etc.) that subclasses the abstract `Module` base (`module.py`).
-- **EventManager:** The central orchestrator (`eventManager.py`) runs as a standalone process, routes messages among modules, and manages lifecycle events such as registration and shutdown.
-- **Inter-process communication:** Modules talk through message queues handled by the `Communicator` class. Each message is a dictionary with `Sender`, `Destination`, and a `Message` payload containing `type` and `payload`.
-- **Configuration:** Runtime settings come from `config.json` via `ConfigLoader`, covering module enablement, hardware parameters, and networking details.
-- **Startup:** `main.py` loads the configuration, launches enabled modules as separate processes, and starts the EventManager; shutdown is coordinated via signals.
-
-## Developer Workflows
-- **Unit tests:** Located in `tests/unit/`. Each module has a dedicated test file. Run the full suite with:
-  ```python -m unittest discover tests/unit```
-  or execute individual tests as configured in CI (`.github/workflows/unitTests.yml`).
-- **Dependencies:** `apt install libcap-dev python3-dev qtbase5-dev python3-libcamera` `pip install -r requirements.txt`
-- **Debugging:** Every module emits logs through the Logger module. Use those messages to trace inter-module communication and diagnose issues.
-- **Configuration changes:** Edit `config.json` to toggle modules or tweak hardware/network settings. Restart the app to apply updates.
-
-## Patterns & Conventions
-- **Message routing:** All inter-module communication leverages the message queue pattern; always call `sendMessage(destination, msgType, payload)` from `Module`.
-- **Lifecycle hooks:** Modules override `onStart`, `mainLoop`, `handleMessage`, and `onStop` to provide their behaviour.
-- **Registration:** Modules register with the EventManager at startup by sending a `Register` message.
-- **Logging:** Prefer `log(level, message)` to forward logs to the Logger module; avoid `print` except during startup/shutdown.
-- **Threading:** Each module owns a communication thread, while its main logic runs in a separate process.
-
-## Integration Points
-- **Kivy GUI:** The GUI module (`gui.py`, `gui.kv`) builds the user interface with Kivy and communicates through the same messaging system.
-- **Hardware:** GPIO, camera, and sensor modules rely on hardware-specific libraries (see `requirements.txt`).
-- **Diagrams:** Architecture and activity diagrams are stored in `diagrams/`.
-
-## Examples
-- **Adding a new module:** Subclass `Module`, implement the lifecycle methods, and update both `main.py` and `config.json`.
-- **Sending a message from a module:**
-  ```python
-  self.sendMessage("EventManager", "Register")
-  self.sendMessage("Logger", "LogMessage", {"level": "INFO", "message": "Started"})
-  ```
-
-## Key Files
-- `main.py`: Startup and process orchestration
-- `module.py`: Base class for every module
-- `eventManager.py`: Central message router
-- `config.json`: Module and system configuration
-- `requirements.txt`: Python dependencies
-- `tests/unit/`: Unit tests for each module
-- `diagrams/`: Architecture diagrams
-
----
-_If any section still feels unclear or incomplete, please leave a comment so we can improve it further._
