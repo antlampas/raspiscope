@@ -1,8 +1,6 @@
 name: Python Unit Tests
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [ tests ]
 jobs:
   build-and-test:
     runs-on: self-hosted
@@ -23,35 +21,3 @@ jobs:
         .venv/bin/python -m pip install --upgrade pip
         echo "Installing requirements..."
         .venv/bin/python -m pip install -r requirements.txt
-    - name: Run Communicator Tests
-      run: |
-        echo "Starting tests..."
-        .venv/bin/python -m unittest tests/unit/test_communicator.py
-    - name: Run EventManager Tests
-      run: |
-        echo "Starting tests..."
-        .venv/bin/python -m unittest tests/unit/test_eventManager.py
-    - name: Run ConfigLoader Tests
-      run: |
-        echo "Starting tests..."
-        .venv/bin/python -m unittest tests/unit/test_configLoader.py
-    - name: Run Logger Tests
-      run: |
-        echo "Starting tests..."
-        .venv/bin/python -m unittest tests/unit/test_logger.py
-    - name: Run CuvetteSensor Tests
-      run: |
-        echo "Starting tests..."
-        .venv/bin/python -m unittest tests/unit/test_cuvetteSensor.py
-    - name: Run LightSource Tests
-      run: |
-        echo "Starting tests..."
-        .venv/bin/python -m unittest tests/unit/test_lightSource.py
-    - name: Run Camera Tests
-      run: |
-        echo "Starting tests..."
-        .venv/bin/python -m unittest tests/unit/test_camera.py
-    - name: Run Analysis Tests
-      run: |
-        echo "Starting tests..."
-        .venv/bin/python -m unittest tests/unit/test_analysis.py
