@@ -1,0 +1,41 @@
+name: Enforce github-actions branch scope
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  restrict-github-actions-branch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Enforce allowed github-actions branch
+        run: |
+          if [ "${{ github.head_ref }}" != "github-actions" ]; then
+            echo "Not github-actions branch"
+            exit 1
+          fi
+      - name: Enforce allowed paths for github-actions branch
+        run: |
+          echo "Enforcing file-scope for github-actions branch…"
+
+          git fetch origin "${{ github.base_ref }}"
+
+          CHANGED_FILES=$(git diff --name-only origin/"${{ github.base_ref }}"...HEAD)
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          VIOLATIONS=$(echo "$CHANGED_FILES" | grep -vE '^\.github/workflows/' || true)
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo "ERROR: Branch 'github-actions' può modificare solo file sotto .github/workflows/"
+            echo "I seguenti file violano la regola:"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
