@@ -1,0 +1,98 @@
+# Author: Antlampas
+# CC BY-SA 4.0
+# https://creativecommons.org/licenses/by-sa/4.0/
+
+#:import dp kivy.metrics.dp
+
+<CameraPane@RelativeLayout>:
+    Image:
+        id: camera_image
+        allow_stretch: True
+        keep_ratio: True
+        size_hint: 1, 1
+    Label:
+        text: "No Image"
+        color: 1, 1, 1, 1
+        font_size: "20sp"
+        text_size: self.size
+        halign: "center"
+        valign: "middle"
+        opacity: 1 if not camera_image.texture else 0
+
+<SpectrogramPane@BoxLayout>:
+    orientation: "vertical"
+    spacing: dp(8)
+    padding: dp(8)
+    SpectrogramGraph:
+        id: spectrogram_graph
+        size_hint_y: 1
+    Label:
+        id: substances_label
+        size_hint_y: None
+        height: self.texture_size[1] + dp(12)
+        text_size: self.width, None
+        halign: "left"
+        valign: "middle"
+        color: 1, 1, 1, 1
+        font_size: "16sp"
+        text: "Identified substances: none"
+
+<CliPane@BoxLayout>:
+    orientation: "vertical"
+    spacing: dp(8)
+    padding: dp(8)
+    canvas.before:
+        Color:
+            rgba: 0.08, 0.08, 0.1, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    ScrollView:
+        id: cli_scroll
+        size_hint_y: 1
+        do_scroll_x: False
+        bar_width: dp(6)
+        Label:
+            id: cli_history
+            text: ""
+            halign: "left"
+            valign: "top"
+            text_size: self.width, None
+            size_hint_y: None
+            height: self.texture_size[1]
+            font_size: "14sp"
+            color: 1, 1, 1, 1
+    TextInput:
+        id: cli_input
+        size_hint_y: None
+        height: dp(40)
+        multiline: False
+        write_tab: False
+        hint_text: "Commands: takePicture, analyze, calibrateCamera, calibrateAnalysis, lightOn, lightOff, analysisMode, addSubstance"
+        on_text_validate: app.root.submit_cli_command(self.text)
+
+<MainLayout@BoxLayout>:
+    orientation: "vertical"
+    spacing: dp(8)
+    padding: dp(8)
+    canvas.before:
+        Color:
+            rgba: 0.05, 0.05, 0.08, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    BoxLayout:
+        id: content_row
+        spacing: dp(8)
+        CameraPane:
+            id: camera_pane
+            size_hint_x: 0.5
+
+        SpectrogramPane:
+            id: spectrogram_pane
+            size_hint_x: 0.5
+
+    CliPane:
+        id: cli_pane
+        size_hint_y: 0.32

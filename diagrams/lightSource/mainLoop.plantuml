@@ -1,0 +1,14 @@
+@startuml Light Source Main Loop
+start
+    switch (Request)
+        case (TurnOn)
+            :TurnOn;
+        case (TurnOff)
+            :TurnOff;
+        case (Dim n)
+            :Dim(n);
+        case (Select Color r,g,b)
+            :SelectColor(r,g,b);
+    endswitch
+stop
+@enduml

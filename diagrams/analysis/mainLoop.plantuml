@@ -1,0 +1,18 @@
+@startuml Analysis Main Loop
+<style>
+element{ HorizontalAlignment:center; }
+</style>
+start
+while (stop signal?) is (no)
+    if (Cuvette present\nsignal\nreceived?) then (yes)
+        :Send\n"take picture"\nevent\nto Camera module;
+        while (Picture received) is (no)
+            :Wait for picture;
+        endwhile (yes)
+        :Get\nspectrograph\nfrom picture;
+        :Compare\nspectrograph\nwith spectrographs\nin database;
+        :Return\nspectrograph and\nsolution composition;
+    endif
+endwhile (yes)
+stop
+@enduml

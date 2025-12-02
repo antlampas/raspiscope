@@ -1,0 +1,67 @@
+@startuml Classes
+interface module{
+    + run()
+    + mainLoop()
+    + sendMessage()
+    + log()
+    + onStart()
+    + handleMessage()
+    + onStop()
+}
+class comunicator{
+    - commtype
+    - name
+    - config
+    - conn
+    - server_socket
+    - incomingQueue
+    - outgoingQueue
+    - client_threads
+    - client_sockets
+    + run()
+    - _runServer()
+    - _serverHandleClient()
+    - _runClient()
+    - _clientReceiveLoop()
+    - _clientSendLoop()
+    - _parseMessage()
+}
+class eventManager{
+    - config
+    - name
+    - networkConfig
+    - communicator
+    - modules
+    - runningProcesses
+    - _stopEvent
+    - _instantiateModules()
+    + run()
+    + route()
+    + _handleShutdown()
+    + _cleanup()
+}
+class analysis{}
+class camera{}
+class configLoader{}
+class cuvetteSensor{}
+class lightSource{}
+class logger{}
+
+module <|.. analysis
+module <|.. camera
+module <|.. cuvetteSensor
+module <|.. lightSource
+module <|.. logger
+
+analysis      *-- communicator
+camera        *-- communicator
+cuvetteSensor *-- communicator
+lightSource   *-- communicator
+logger        *-- communicator
+
+eventManager o-- analysis
+eventManager o-- camera
+eventManager o-- cuvetteSensor
+eventManager o-- lightSource
+eventManager o-- logger
+@enduml

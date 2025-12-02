@@ -1,0 +1,32 @@
+@startuml Boot activity
+<style>
+element{ HorizontalAlignment:center; }
+</style>
+start
+:Load\nconfiguration;
+:Load\nEvent Manager;
+:Start\nEvent Manager;
+fork
+    :Load\nLogger\nmodule;
+    :Start\nLogger\nmodule;
+fork again
+    :Load\nCamera\nmodule;
+    :Start\nCamera\nmodule;
+fork again
+    :Load\nLight Source\nmodule;
+    :Start\nLight Source\nmodule;
+fork again
+    :Load\nCuvette Sensor\nmodule;
+    :Start\nCuvette Sensor\nmodule;
+end merge
+if (Is\nthe first boot\never?) then (yes)
+    :Get\nthe spectrographs\ndatabase;
+else (no)
+    if (New spectrographs\nor\nspectrographs updates?) then (yes)
+        :Get updates;
+    else (no)
+    endif
+endif
+:Calibrate Cuvette Presence Sequence;
+stop
+@enduml

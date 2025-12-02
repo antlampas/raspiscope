@@ -1,0 +1,12 @@
+gpiozero
+Kivy
+kivy_garden.matplotlib
+matplotlib
+opencv-python
+pandas
+picamera2
+rpi_ws281x
+scipy
+setuptools
+six
+websockets

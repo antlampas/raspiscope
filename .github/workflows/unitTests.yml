@@ -1,0 +1,23 @@
+name: Python Unit Tests
+on:
+  workflow_dispatch:
+jobs:
+  build-and-test:
+    runs-on: self-hosted
+    steps:
+    - name: Install System Dependencies
+      run: |
+        echo "Installing system dependencies"
+        sudo apt-get update
+        sudo apt-get install -y python3-picamera2 libcap-dev libcamera-dev python-dev-is-python3
+    - name: Checkout Code
+      uses: actions/checkout@v4
+    - name: Install Dependencies
+      run: |
+        echo "Setting up and starting Python Virtual Environment..." 
+        python3 -m venv --system-site-packages .venv
+        source .venv/bin/activate
+        echo "Upgrading pip..."
+        .venv/bin/python -m pip install --upgrade pip
+        echo "Installing requirements..."
+        .venv/bin/python -m pip install -r requirements.txt

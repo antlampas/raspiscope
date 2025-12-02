@@ -1,0 +1,23 @@
+@startuml Modules Communications
+<style>
+element{ HorizontalAlignment:center; }
+</style>
+activate UI
+activate Logger
+activate CuvetteSensor
+CuvetteSensor -> Analysis      : Cuvette present
+activate Analysis
+Analysis      -> Camera        : Take picture
+activate Camera
+CuvetteSensor -> Logger        : Cuvette present
+Camera        -> Analysis      : Picture took with image
+Camera        -> Logger        : Picture took
+deactivate Camera
+Analysis      -> UI            : Spectrograph\nand\nmaterial name
+Analysis      -> CuvetteSensor : Spectrogram sent
+Analysis      -> Logger        : Spectrogram sent
+deactivate Analysis
+deactivate CuvetteSensor
+deactivate Logger
+deactivate UI
+@enduml

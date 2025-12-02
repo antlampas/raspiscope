@@ -1,0 +1,11 @@
+@startuml CuvetteSensor Main Loop
+start
+while (stop signal?) is (no)
+if (presence sensed) then (yes)
+    :Broadcast\n"cuvette present"\nevent;
+elseif (remove sensed) then (yes)
+    :Broadcast\n"cuvette removed"\nevent;
+endif
+endwhile (yes)
+stop
+@enduml
